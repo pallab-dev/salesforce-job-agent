@@ -1,0 +1,56 @@
+name: Salesforce Job Agent
+
+on:
+  schedule:
+    - cron: "0 */8 * * *"   # every 8 hours
+  workflow_dispatch:
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests openai
+
+      - name: Run Job Agent
+        run: |
+          python - << 'EOF'
+          import requests, os
+          from openai import OpenAI
+
+          client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+          # Fetch jobs from RemoteOK
+          jobs = requests.get("https://remoteok.com/api").json()[1:]
+
+          salesforce_jobs = [j for j in jobs if "salesforce" in j["position"].lower()]
+
+          if not salesforce_jobs:
+              print("No jobs found")
+              exit()
+
+          # Ask AI to filter senior remote roles
+          prompt = f"""
+          Filter only Salesforce roles with 6+ years experience and remote global.
+          Jobs: {salesforce_jobs[:3]}
+          """
+
+          response = client.chat.completions.create(
+              model="gpt-4.1-mini",
+              messages=[{"role":"user","content":prompt}]
+          )
+
+          print(response.choices[0].message.content)
+          EOF
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
