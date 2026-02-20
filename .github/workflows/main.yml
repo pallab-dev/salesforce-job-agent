@@ -1,4 +1,4 @@
-name: Salesforce Job Agent (FREE Groq)
+name: Salesforce AI Job Agent + Email
 
 on:
   schedule:
@@ -21,11 +21,15 @@ jobs:
       - name: Run AI Job Agent
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
         run: |
           python - << 'EOF'
-          import requests, os, json
+          import requests, os, smtplib, json
 
           GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+          EMAIL_USER = os.getenv("EMAIL_USER")
+          EMAIL_PASS = os.getenv("EMAIL_PASS")
 
           # Fetch remote jobs
           jobs = requests.get("https://remoteok.com/api").json()[1:]
@@ -35,21 +39,19 @@ jobs:
               print("No Salesforce jobs found.")
               exit()
 
-          # Take first 5 jobs
           sf_jobs = sf_jobs[:5]
 
-          # Prepare prompt
+          # AI filtering prompt
           prompt = f"""
-          You are filtering jobs for a Salesforce professional with 6+ years experience.
-          Accept roles: Developer, Admin, Consultant, Architect.
-          Only remote global jobs.
-          Reject junior roles.
+          Filter only Salesforce roles with 6+ years experience, remote global.
+          Roles allowed: Developer, Admin, Consultant, Architect.
+          Return only relevant jobs in bullet points.
 
           Jobs:
           {sf_jobs}
           """
 
-          # Call Groq Llama 3 API
+          # Call Groq API
           response = requests.post(
               "https://api.groq.com/openai/v1/chat/completions",
               headers={
@@ -62,6 +64,16 @@ jobs:
               }
           )
 
-          print("==== AI FILTERED JOBS ====")
-          print(response.json()["choices"][0]["message"]["content"])
+          result = response.json()["choices"][0]["message"]["content"]
+
+          # Send Email
+          msg = f"Subject: New Salesforce Remote Jobs Found\n\n{result}"
+
+          server = smtplib.SMTP("smtp.gmail.com", 587)
+          server.starttls()
+          server.login(EMAIL_USER, EMAIL_PASS)
+          server.sendmail(EMAIL_USER, EMAIL_USER, msg)
+          server.quit()
+
+          print("Email sent successfully!")
           EOF
