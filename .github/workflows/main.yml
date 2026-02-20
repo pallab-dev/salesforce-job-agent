@@ -1,4 +1,4 @@
-name: Salesforce AI Job Agent + Email
+name: developer AI Job Agent + Email
 
 on:
   schedule:
@@ -33,17 +33,17 @@ jobs:
 
           # Fetch remote jobs
           jobs = requests.get("https://remoteok.com/api").json()[1:]
-          sf_jobs = [j for j in jobs if "salesforce" in j["position"].lower()]
+          sf_jobs = [j for j in jobs if "developer" in j["position"].lower()]
 
           if not sf_jobs:
-              print("No Salesforce jobs found.")
+              print("No developer jobs found.")
               exit()
 
           sf_jobs = sf_jobs[:5]
 
           # AI filtering prompt
           prompt = f"""
-          Filter only Salesforce roles with 6+ years experience, remote global.
+          Filter only developer roles with 6+ years experience, remote global.
           Roles allowed: Developer, Admin, Consultant, Architect.
           Return only relevant jobs in bullet points.
 
@@ -67,7 +67,7 @@ jobs:
           result = response.json()["choices"][0]["message"]["content"]
 
           # Send Email
-          msg = f"Subject: New Salesforce Remote Jobs Found\n\n{result}"
+          msg = f"Subject: New developer Remote Jobs Found\n\n{result}"
 
           server = smtplib.SMTP("smtp.gmail.com", 587)
           server.starttls()
