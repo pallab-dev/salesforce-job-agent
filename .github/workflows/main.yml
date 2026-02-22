@@ -40,22 +40,34 @@ jobs:
               exit()
 
           # Prepare smaller job data
-          sf_jobs_small = [
+          jobs_for_llm = [
               {
                   "title": j.get("position"),
                   "company": j.get("company"),
-                  "url": j.get("url")
+                  "url": j.get("url"),
+                  "source": j.get("source", "RemoteOK"),
+                  "snippet": (j.get("description") or "")[:300],
               }
-              for j in sf_jobs[:10]
+              for j in sf_jobs_small[:15]
           ]
           
           prompt = f"""
-          Filter only developer roles with 6+ years experience, remote global.
-          Return relevant jobs in bullet points with title, company, and URL.
-          Do NOT include any code. Output only bullet points.
-
+          You are a job alert bot. Follow instructions EXACTLY.
+          
+          User preference:
+          - Only REMOTE roles.
+          - Senior roles (6+ years): Senior / Lead / Staff / Principal / Architect.
+          - Reject internships, junior, entry-level.
+          
+          Output rules (MANDATORY):
+          - Output ONLY bullet points.
+          - Each bullet must be exactly: "- <Title> — <Company> — <URL>"
+          - Max 8 bullets.
+          - NO code. NO explanations. NO markdown fences.
+          - If none match, output exactly: NONE
+          
           Jobs:
-          {sf_jobs_small}
+          {jobs_for_llm}
           """
           
           # Call Groq API
@@ -70,7 +82,7 @@ jobs:
                   "messages": [
                       {"role": "user", "content": prompt}
                   ],
-                  "temperature": 0.3
+                  "temperature": 0.1
               }
           )
           
@@ -89,6 +101,41 @@ jobs:
           result = data["choices"][0]["message"]["content"]
           import html
           result = html.unescape(result)
+          result = clean_llm_output(result)
+
+          if result == "NONE":
+          print("Model found no relevant jobs. Skipping email.")
+          raise SystemExit(0)
+
+
+          import re
+          import html
+
+          def clean_llm_output(text: str) -> str:
+            text = html.unescape(text or "")
+        
+            # Remove code fences if any
+            text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+        
+            # Keep only lines that look like bullets
+            lines = []
+            for line in text.splitlines():
+                line = line.strip()
+                if line.startswith(("•", "-", "*")):
+                    # normalize bullet to "-"
+                    line = re.sub(r"^[•*]\s*", "- ", line)
+                    lines.append(line)
+        
+            # If model returned NONE
+            if text.strip() == "NONE":
+                return "NONE"
+        
+            # If no bullet lines found, fallback to first 1-2 lines (but keep it minimal)
+            if not lines:
+                return "NONE"
+        
+            # Limit to max 8
+            return "\n".join(lines[:8])
 
           # Send Email
           # --- Email credentials cleanup ---
