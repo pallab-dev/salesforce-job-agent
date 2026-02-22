@@ -52,6 +52,7 @@ jobs:
           prompt = f"""
           Filter only developer roles with 6+ years experience, remote global.
           Return relevant jobs in bullet points with title, company, and URL.
+          Do NOT include any code. Output only bullet points.
 
           Jobs:
           {sf_jobs_small}
@@ -88,13 +89,25 @@ jobs:
           result = data["choices"][0]["message"]["content"]
 
           # Send Email
-          msg = f"Subject: New developer Remote Jobs Found\n\n{result}"
-
+          # --- Email credentials cleanup ---
+          EMAIL_USER = (os.getenv("EMAIL_USER") or "").strip().replace("\u00a0", " ")
+          EMAIL_PASS = (os.getenv("EMAIL_PASS") or "").strip()
+          EMAIL_PASS = EMAIL_PASS.replace(" ", "").replace("\u00a0", "")
+          
+          print("DEBUG: EMAIL_USER has NBSP:", "\u00a0" in EMAIL_USER)
+          print("DEBUG: EMAIL_PASS has NBSP:", "\u00a0" in EMAIL_PASS)
+          print("DEBUG: EMAIL_PASS length:", len(EMAIL_PASS))
+          
+          # Send Email
+          msg = f"Subject: New Developer Remote Jobs Found\r\n\r\n{result}"
+          
           server = smtplib.SMTP("smtp.gmail.com", 587)
+          server.ehlo()
           server.starttls()
+          server.ehlo()
           server.login(EMAIL_USER, EMAIL_PASS)
           server.sendmail(EMAIL_USER, EMAIL_USER, msg)
           server.quit()
-
+          
           print("Email sent successfully!")
           EOF
