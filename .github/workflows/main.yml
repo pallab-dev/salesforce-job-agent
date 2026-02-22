@@ -39,16 +39,16 @@ jobs:
               print("No developer jobs found.")
               exit()
 
-          sf_jobs = sf_jobs[:5]
+          sf_jobs_small = [
+          {"title": j["position"], "company": j["company"]}
+            for j in sf_jobs
+          ]
 
-          # AI filtering prompt
           prompt = f"""
-          Filter only developer roles with 6+ years experience, remote global.
-          Roles allowed: Developer, Admin, Consultant, Architect.
-          Return only relevant jobs in bullet points.
+          Filter developer jobs with 6+ years experience. Return best 5.
 
           Jobs:
-          {sf_jobs}
+          {sf_jobs_small}
           """
 
           # Call Groq API
@@ -59,12 +59,19 @@ jobs:
                   "Content-Type": "application/json"
               },
               json={
-                  "model": "llama3-70b-8192",
-                  "messages": [{"role":"user","content": prompt}]
+                  "model": "llama3-8b-8192",
+                  "messages": [{"role":"user","content": prompt}],
+                  "temperature": 0.3
               }
           )
+          data = response.json()
+          print("GROQ RESPONSE:", json.dumps(data, indent=2))
 
-          result = response.json()["choices"][0]["message"]["content"]
+          if "choices" not in data:
+            print("Groq failed. Raw response printed above.")
+            exit(1)
+
+          result = data["choices"][0]["message"]["content"]
 
           # Send Email
           msg = f"Subject: New developer Remote Jobs Found\n\n{result}"
