@@ -87,26 +87,26 @@ jobs:
               exit(1)
           
           result = data["choices"][0]["message"]["content"]
+          import html
+          result = html.unescape(result)
 
           # Send Email
           # --- Email credentials cleanup ---
-          EMAIL_USER = (os.getenv("EMAIL_USER") or "").strip().replace("\u00a0", " ")
-          EMAIL_PASS = (os.getenv("EMAIL_PASS") or "").strip()
-          EMAIL_PASS = EMAIL_PASS.replace(" ", "").replace("\u00a0", "")
-          
-          print("DEBUG: EMAIL_USER has NBSP:", "\u00a0" in EMAIL_USER)
-          print("DEBUG: EMAIL_PASS has NBSP:", "\u00a0" in EMAIL_PASS)
-          print("DEBUG: EMAIL_PASS length:", len(EMAIL_PASS))
-          
-          # Send Email
-          msg = f"Subject: New Developer Remote Jobs Found\r\n\r\n{result}"
+          from email.message import EmailMessage
+
+          # Build UTF-8 email properly
+          email_msg = EmailMessage()
+          email_msg["Subject"] = "New Developer Remote Jobs Found"
+          email_msg["From"] = EMAIL_USER
+          email_msg["To"] = EMAIL_USER
+          email_msg.set_content(result, charset="utf-8")
           
           server = smtplib.SMTP("smtp.gmail.com", 587)
           server.ehlo()
           server.starttls()
           server.ehlo()
           server.login(EMAIL_USER, EMAIL_PASS)
-          server.sendmail(EMAIL_USER, EMAIL_USER, msg)
+          server.send_message(email_msg)
           server.quit()
           
           print("Email sent successfully!")
