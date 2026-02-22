@@ -39,18 +39,24 @@ jobs:
               print("No developer jobs found.")
               exit()
 
+          # Prepare smaller job data
           sf_jobs_small = [
-          {"title": j["position"], "company": j["company"]}
-            for j in sf_jobs
+              {
+                  "title": j.get("position"),
+                  "company": j.get("company"),
+                  "url": j.get("url")
+              }
+              for j in sf_jobs[:10]
           ]
-
+          
           prompt = f"""
-          Filter developer jobs with 6+ years experience. Return best 5.
+          Filter only developer roles with 6+ years experience, remote global.
+          Return relevant jobs in bullet points with title, company, and URL.
 
           Jobs:
           {sf_jobs_small}
           """
-
+          
           # Call Groq API
           response = requests.post(
               "https://api.groq.com/openai/v1/chat/completions",
@@ -59,18 +65,26 @@ jobs:
                   "Content-Type": "application/json"
               },
               json={
-                  "model": "llama-3.3-70b-versatile"
-                  "messages": [{"role":"user","content": prompt}],
+                  "model": "llama-3.1-8b-instant",
+                  "messages": [
+                      {"role": "user", "content": prompt}
+                  ],
                   "temperature": 0.3
               }
           )
+          
           data = response.json()
-          print("GROQ RESPONSE:", json.dumps(data, indent=2))
-
+          
+          print("GROQ RAW RESPONSE:", data)
+          
+          if "error" in data:
+              print("Groq Error:", data["error"])
+              exit(1)
+          
           if "choices" not in data:
-            print("Groq failed. Raw response printed above.")
-            exit(1)
-
+              print("Unexpected Groq response:", data)
+              exit(1)
+          
           result = data["choices"][0]["message"]["content"]
 
           # Send Email
