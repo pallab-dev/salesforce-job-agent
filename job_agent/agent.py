@@ -22,6 +22,8 @@ class AgentOptions:
     profile: str | None = None
     keyword: str = "developer"
     sources: list[str] | None = None
+    remote_only: bool = True
+    strict_senior_only: bool = True
     llm_input_limit: int = 15
     max_bullets: int = 8
     dry_run: bool = False
@@ -109,6 +111,9 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
         jobs_for_llm=jobs_for_llm,
         timeout_seconds=settings.groq_timeout_seconds,
         max_bullets=options.max_bullets,
+        keyword=options.keyword,
+        remote_only=options.remote_only,
+        strict_senior_only=options.strict_senior_only,
     )
     cleaned_output = clean_llm_output(raw_output, max_bullets=options.max_bullets)
 

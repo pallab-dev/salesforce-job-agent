@@ -8,9 +8,9 @@ sources:
   - workday
 
 limits:
-  llm_input_limit: 30
-  max_bullets: 10
+  llm_input_limit: 50
+  max_bullets: 20
 
 filters:
-  remote_only: true
-  strict_senior_only: true
+  remote_only: false
+  strict_senior_only: false

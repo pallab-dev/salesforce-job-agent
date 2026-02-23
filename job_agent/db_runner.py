@@ -51,6 +51,14 @@ def run_all_users_from_db(
                 profile=user.username,
                 keyword=(prefs.keyword if prefs and prefs.keyword else profile_cfg.keyword),
                 sources=profile_cfg.sources,
+                remote_only=(
+                    prefs.remote_only if prefs and prefs.remote_only is not None else profile_cfg.remote_only
+                ),
+                strict_senior_only=(
+                    prefs.strict_senior_only
+                    if prefs and prefs.strict_senior_only is not None
+                    else profile_cfg.strict_senior_only
+                ),
                 llm_input_limit=(
                     prefs.llm_input_limit
                     if prefs and prefs.llm_input_limit is not None
@@ -133,6 +141,12 @@ def run_single_user_from_db(
             profile=user.username,
             keyword=(prefs.keyword if prefs and prefs.keyword else profile_cfg.keyword),
             sources=profile_cfg.sources,
+            remote_only=(prefs.remote_only if prefs and prefs.remote_only is not None else profile_cfg.remote_only),
+            strict_senior_only=(
+                prefs.strict_senior_only
+                if prefs and prefs.strict_senior_only is not None
+                else profile_cfg.strict_senior_only
+            ),
             llm_input_limit=(
                 prefs.llm_input_limit if prefs and prefs.llm_input_limit is not None else profile_cfg.llm_input_limit
             ),

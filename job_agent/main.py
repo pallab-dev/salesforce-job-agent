@@ -70,6 +70,8 @@ def main() -> int:
         profile=profile_name,
         keyword=(args.keyword or profile_cfg.keyword).strip() or profile_cfg.keyword,
         sources=cli_sources or profile_cfg.sources,
+        remote_only=profile_cfg.remote_only,
+        strict_senior_only=profile_cfg.strict_senior_only,
         llm_input_limit=max(1, args.llm_input_limit or profile_cfg.llm_input_limit),
         max_bullets=max(1, args.max_bullets or profile_cfg.max_bullets),
         dry_run=args.dry_run,
@@ -81,7 +83,8 @@ def main() -> int:
         print(
             f"Profile config resolved: name={profile_cfg.name} "
             f"keyword={options.keyword} sources={','.join(options.sources or [])} "
-            f"llm_input_limit={options.llm_input_limit} max_bullets={options.max_bullets}"
+            f"llm_input_limit={options.llm_input_limit} max_bullets={options.max_bullets} "
+            f"remote_only={options.remote_only} strict_senior_only={options.strict_senior_only}"
         )
         settings = load_settings()
         return run_agent(settings, options)

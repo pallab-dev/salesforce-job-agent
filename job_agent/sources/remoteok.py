@@ -21,13 +21,60 @@ def filter_jobs_by_keyword(jobs: list[dict[str, Any]], keyword: str) -> list[dic
     needle = keyword.strip().lower()
     if not needle:
         return jobs
+    aliases = _keyword_aliases(needle)
 
     matched: list[dict[str, Any]] = []
     for job in jobs:
-        title = str(job.get("position") or "").lower()
-        if needle in title:
+        haystack = " ".join(
+            [
+                str(job.get("position") or ""),
+                str(job.get("description") or "")[:800],
+                str(job.get("company") or ""),
+                str(job.get("location") or ""),
+                " ".join(str(t) for t in (job.get("tags") or []) if t),
+                str(job.get("category") or ""),
+            ]
+        ).lower()
+
+        if any(term in haystack for term in aliases):
             matched.append(job)
     return matched
+
+
+def _keyword_aliases(needle: str) -> list[str]:
+    aliases = [needle]
+    compact = " ".join(needle.split())
+    if compact == "developer":
+        aliases.extend(
+            [
+                "engineer",
+                "software engineer",
+                "software developer",
+                "sde",
+                "backend engineer",
+                "back-end engineer",
+                "full stack engineer",
+                "full-stack engineer",
+            ]
+        )
+    elif compact.endswith(" developer"):
+        prefix = compact[: -len(" developer")].strip()
+        if prefix:
+            aliases.extend(
+                [
+                    f"{prefix} engineer",
+                    f"software {prefix} engineer",
+                    f"{prefix} software engineer",
+                ]
+            )
+    # Deduplicate while preserving order.
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in aliases:
+        if item and item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
 
 
 def llm_payload(jobs: list[dict[str, Any]], limit: int = 15) -> list[dict[str, str]]:
@@ -51,4 +98,3 @@ def stable_job_key(job: dict[str, Any]) -> str:
     title = str(job.get("position") or "").strip()
     company = str(job.get("company") or "").strip()
     return f"{company}::{title}"
-
