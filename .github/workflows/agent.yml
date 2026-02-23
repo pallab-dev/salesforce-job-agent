@@ -11,8 +11,8 @@ on:
         type: string
 
 jobs:
-  run-agent:
-    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.profile == '' || github.event.inputs.profile == matrix.profile }}
+  run-all-profiles:
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.profile == '') }}
     runs-on: ubuntu-latest
     environment: ${{ matrix.profile }}
     strategy:
@@ -41,3 +41,28 @@ jobs:
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
         run: python -m job_agent.main --profile "${{ matrix.profile }}" --keyword developer
+
+  run-single-profile:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.profile != '' }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.profile }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run AI Job Agent (single profile)
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: python -m job_agent.main --profile "${{ github.event.inputs.profile }}" --keyword developer
