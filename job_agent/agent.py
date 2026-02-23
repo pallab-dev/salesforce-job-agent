@@ -27,6 +27,7 @@ class AgentOptions:
     dry_run: bool = False
     dedupe_enabled: bool = True
     seen_jobs_file: Path | None = None
+    snapshot_store: Any | None = None
 
 
 def _require_env(settings: Settings, *, require_email: bool) -> None:
@@ -42,16 +43,30 @@ def _require_env(settings: Settings, *, require_email: bool) -> None:
         raise RuntimeError(f"Missing required environment variables: {', '.join(missing)}")
 
 
+def _validate_recipient_config(settings: Settings, options: AgentOptions) -> None:
+    # In multi-profile mode, require an explicit recipient to avoid accidental
+    # fallback to the central sender inbox for every profile.
+    if options.profile and not options.dry_run and not (settings.email_to or "").strip():
+        raise RuntimeError(
+            f"EMAIL_TO is required for profile runs (profile={options.profile}). "
+            "Set EMAIL_TO in the GitHub Environment for that profile."
+        )
+
+
 def _load_previous_snapshot(
     jobs: list[dict[str, Any]],
     *,
     dedupe_enabled: bool,
     seen_jobs_file: Path | None,
+    snapshot_store: Any | None,
 ) -> tuple[list[dict[str, Any]], SeenJobsStore | None, set[str], list[str]]:
     if not dedupe_enabled or seen_jobs_file is None:
-        return jobs, None, set(), []
+        if not dedupe_enabled:
+            return jobs, None, set(), []
+        if snapshot_store is None:
+            return jobs, None, set(), []
 
-    store = SeenJobsStore(seen_jobs_file)
+    store = snapshot_store if snapshot_store is not None else SeenJobsStore(seen_jobs_file)  # type: ignore[arg-type]
     seen_before = store.load()
     keys_by_job = [(stable_job_key(job), job) for job in jobs]
     current_keys = [key for key, _ in keys_by_job if key]
@@ -60,6 +75,7 @@ def _load_previous_snapshot(
 
 def run_agent(settings: Settings, options: AgentOptions) -> int:
     _require_env(settings, require_email=not options.dry_run)
+    _validate_recipient_config(settings, options)
 
     jobs = fetch_jobs_from_sources(settings, options.sources or ["remoteok"])
     print(f"Fetched jobs from sources: {', '.join(options.sources or ['remoteok'])} | total: {len(jobs)}")
@@ -73,6 +89,7 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
         keyword_jobs,
         dedupe_enabled=options.dedupe_enabled,
         seen_jobs_file=options.seen_jobs_file,
+        snapshot_store=options.snapshot_store,
     )
 
     if options.dedupe_enabled and store is not None:

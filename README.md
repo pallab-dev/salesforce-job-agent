@@ -9,6 +9,17 @@ Automated job alert agent that:
 
 It can also run locally from the CLI for testing.
 
+## Project History
+
+- `CHANGELOG.md` contains iteration summaries linked to commit IDs
+- `docs/iterations/` can be used for detailed milestone notes
+
+## Next Architecture (Planned)
+
+- Central sender mode (shared sender credentials, per-user `EMAIL_TO`)
+- PostgreSQL-backed user registry and preferences (`DATABASE_URL`)
+- Single scheduled workflow run that loads active users from DB
+
 ## What It Does
 
 Current flow:
@@ -37,7 +48,6 @@ The file `.job_agent/seen_jobs.json` stores the previous run snapshot so the age
 config/
   profiles/
     default.yml            # profile defaults (config-driven behavior)
-    pallab.yml             # example profile config
   sources/
     companies.yml          # placeholder for future ATS/company source lists
 
@@ -75,7 +85,8 @@ Notes:
 
 - `EMAIL_USER` is the Gmail login/sender.
 - `EMAIL_PASS` should be a Gmail App Password (16 characters). Spaces are stripped automatically in code.
-- `EMAIL_TO` is optional. If set, email is sent to `EMAIL_TO`; otherwise it sends to `EMAIL_USER`.
+- `EMAIL_TO` is optional for single-user/local runs. If set, email is sent to `EMAIL_TO`; otherwise it sends to `EMAIL_USER`.
+- In the DB-backed multi-user workflow, recipients come from PostgreSQL (`users.email_to`) instead of `EMAIL_TO` secrets.
 
 Optional env vars (advanced):
 
@@ -158,7 +169,7 @@ Default lookup:
 - missing profile file -> falls back to `config/profiles/default.yml`
 - if `default.yml` is also missing -> built-in defaults are used safely
 
-Example `config/profiles/pallab.yml`:
+Example `config/profiles/default.yml`:
 
 ```yaml
 keyword: developer
@@ -200,7 +211,7 @@ The workflow is in `.github/workflows/agent.yml` and runs:
 - on a schedule (`every 8 hours`)
 - manually (`workflow_dispatch`)
 
-### Add Repository Secrets
+### Add Repository Secrets (DB + central sender mode)
 
 In GitHub:
 
@@ -208,9 +219,15 @@ In GitHub:
 
 Add:
 
+- `DATABASE_URL`
 - `GROQ_API_KEY`
 - `EMAIL_USER`
 - `EMAIL_PASS`
+
+Recommended:
+
+- Keep `EMAIL_USER` / `EMAIL_PASS` as a single central sender mailbox at repo level
+- Store user recipients in PostgreSQL (`users.email_to`)
 
 ### Trigger a Manual Run
 
@@ -219,50 +236,93 @@ Add:
 3. Open `AI Job Alert Agent`
 4. Click `Run workflow`
 
-## Multi-User Setup (GitHub Actions Environments)
+## Multi-User Setup (PostgreSQL + Central Sender)
 
-This repo now supports multi-user scheduled runs using one GitHub Actions Environment per user profile.
+This repo now supports multi-user scheduled runs from a single GitHub Actions job by loading users from PostgreSQL.
 
 How it works:
 
-- The workflow runs a matrix of `profile` names (for example `pallab`, `alex`)
-- Each matrix job uses a GitHub Environment with the same name
-- That environment provides the secrets for that user
-- The agent uses `--profile <name>` so each profile gets separate snapshot state (`seen_jobs.json`)
+- GitHub Actions stores shared secrets only: `DATABASE_URL`, `GROQ_API_KEY`, `EMAIL_USER`, `EMAIL_PASS`
+- The workflow initializes the schema (`python -m job_agent.db_main db init`)
+- The workflow runs all active DB users (`python -m job_agent.db_main run --all-users`)
+- Users are stored in PostgreSQL (`users` table) with `username` + `email_to`
+- User-specific preferences (optional) are stored in `user_preferences`
+- Shared defaults continue to come from `config/profiles/default.yml`
 
-### Add a New User (Scheduled Emails)
+### What You Need To Sign Up For (Free)
 
-For a new user (example: `alex`):
+You need a PostgreSQL database and connection string (`DATABASE_URL`).
 
-1. Create a GitHub Environment named `alex`
-2. Add environment secrets:
-   - `GROQ_API_KEY`
-   - `EMAIL_USER`
-   - `EMAIL_PASS`
-   - `EMAIL_TO` (optional)
-3. Edit `.github/workflows/agent.yml` and add `alex` to the matrix list:
+Free options:
 
-```yaml
-profile: [pallab, alex]
+- Supabase (Postgres): https://supabase.com/
+- Neon (Postgres): https://neon.tech/
+
+After signup:
+
+1. Create a project/database
+2. Copy the Postgres connection string
+3. Add it as repo secret: `DATABASE_URL`
+
+### Initialize DB Schema
+
+Local or CI:
+
+```bash
+export DATABASE_URL="postgresql://..."
+python -m job_agent.db_main db init
 ```
 
-After that, scheduled runs will include `alex`, and emails will be sent using Alex's environment secrets.
+### Add / Manage Users
 
-Optional (config-driven profile settings):
+Add users:
 
-- Add `config/profiles/alex.yml` to customize keyword/sources/limits for Alex without changing Python code.
+```bash
+python -m job_agent.db_main users add --username pallab --email-to pallab@example.com
+python -m job_agent.db_main users add --username saikia --email-to saikia@example.com
+```
 
-### Manual Run for One Profile
+Add user with overrides (optional):
 
-The workflow has a `profile` input.
+```bash
+python -m job_agent.db_main users add \
+  --username saikia \
+  --email-to saikia@example.com \
+  --keyword "salesforce developer" \
+  --sources remoteok,remotive \
+  --llm-input-limit 25 \
+  --max-bullets 12
+```
 
-- Leave it empty: runs all profiles in the matrix
-- Set it to `alex`: runs only the `alex` matrix job
+List users:
+
+```bash
+python -m job_agent.db_main users list
+```
+
+Activate/deactivate:
+
+```bash
+python -m job_agent.db_main users deactivate --username saikia
+python -m job_agent.db_main users activate --username saikia
+```
+
+Optional config-driven defaults:
+
+- Keep only `config/profiles/default.yml` for shared defaults
+- Add `config/profiles/<username>.yml` only if needed
+
+### Manual Run for One DB User
+
+The workflow has a `username` input.
+
+- Leave it empty: runs all active DB users
+- Set it to `saikia`: runs only that DB user
 
 Important:
 
-- The input value must match a profile name in the matrix
-- The profile name must also match the GitHub Environment name
+- The input value must match a `users.username` row in the DB
+- The user must be active
 
 ## Gmail Setup (App Password)
 
@@ -283,6 +343,7 @@ Reference (Google Help):
 
 - `Missing required environment variables`:
   - Check that `GROQ_API_KEY`, `EMAIL_USER`, `EMAIL_PASS` are set (unless `--dry-run`)
+  - For DB commands/workflow, also set `DATABASE_URL`
 - Gmail login fails:
   - Confirm you are using an App Password, not the account password
   - Re-copy the App Password (spaces are okay; code strips them)
@@ -295,10 +356,11 @@ Reference (Google Help):
 ## Notes for Contributors
 
 - Main entrypoint: `job_agent/main.py`
+- DB CLI entrypoint: `job_agent/db_main.py`
 - Core workflow logic: `job_agent/agent.py`
 - Keep the GitHub Actions workflow minimal; put logic in Python modules
 - `.job_agent/` is ignored in git because it contains local snapshot state
-- For multi-user scheduling, keep the workflow `matrix.profile` list in sync with GitHub Environment names
+- DB schema and access layer live in `job_agent/storage/postgres_schema.sql` and `job_agent/storage/postgres_db.py`
 
 ## Roadmap (Planned)
 
