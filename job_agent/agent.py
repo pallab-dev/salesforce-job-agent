@@ -19,6 +19,7 @@ from job_agent.utils.cleaning import clean_llm_output
 
 @dataclass(frozen=True)
 class AgentOptions:
+    profile: str | None = None
     keyword: str = "developer"
     llm_input_limit: int = 15
     max_bullets: int = 8
@@ -107,6 +108,7 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
             smtp_port=settings.smtp_port,
             email_user=settings.email_user,
             email_pass=settings.email_pass,
+            email_to=settings.email_to,
             subject=f"New {options.keyword.title()} Remote Jobs Found",
             body=cleaned_output,
         )

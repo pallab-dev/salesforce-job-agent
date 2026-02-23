@@ -4,10 +4,23 @@ on:
   schedule:
     - cron: "0 */8 * * *"   # every 8 hours
   workflow_dispatch:
+    inputs:
+      profile:
+        description: "Run only one profile (GitHub Environment name). Leave empty to run all."
+        required: false
+        type: string
 
 jobs:
   run-agent:
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.profile == '' || github.event.inputs.profile == matrix.profile }}
     runs-on: ubuntu-latest
+    environment: ${{ matrix.profile }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Add one GitHub Environment per user and list its name here.
+        # Example: [pallab, alex, john]
+        profile: [pallab, saikia]
 
     steps:
       - name: Checkout repository
@@ -26,4 +39,5 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
-        run: python -m job_agent.main --keyword developer
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: python -m job_agent.main --profile "${{ matrix.profile }}" --keyword developer

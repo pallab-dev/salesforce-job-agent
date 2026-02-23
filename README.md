@@ -64,8 +64,9 @@ Required for normal runs:
 
 Notes:
 
-- `EMAIL_USER` is both sender and recipient in the current implementation.
+- `EMAIL_USER` is the Gmail login/sender.
 - `EMAIL_PASS` should be a Gmail App Password (16 characters). Spaces are stripped automatically in code.
+- `EMAIL_TO` is optional. If set, email is sent to `EMAIL_TO`; otherwise it sends to `EMAIL_USER`.
 
 Optional env vars (advanced):
 
@@ -113,9 +114,16 @@ Dry run (prints output instead of sending email):
 python -m job_agent.main --keyword developer --dry-run
 ```
 
+Profile-based run (stores snapshot state separately per profile):
+
+```bash
+python -m job_agent.main --profile pallab --keyword developer
+```
+
 Useful options:
 
 - `--keyword` title keyword match (default `developer`)
+- `--profile` profile name used for per-profile snapshot file paths
 - `--llm-input-limit` max jobs sent to Groq (default `15`)
 - `--max-bullets` max bullet results in output/email (default `8`)
 - `--dry-run` print instead of email
@@ -148,15 +156,61 @@ Add:
 3. Open `AI Job Alert Agent`
 4. Click `Run workflow`
 
+## Multi-User Setup (GitHub Actions Environments)
+
+This repo now supports multi-user scheduled runs using one GitHub Actions Environment per user profile.
+
+How it works:
+
+- The workflow runs a matrix of `profile` names (for example `pallab`, `alex`)
+- Each matrix job uses a GitHub Environment with the same name
+- That environment provides the secrets for that user
+- The agent uses `--profile <name>` so each profile gets separate snapshot state (`seen_jobs.json`)
+
+### Add a New User (Scheduled Emails)
+
+For a new user (example: `alex`):
+
+1. Create a GitHub Environment named `alex`
+2. Add environment secrets:
+   - `GROQ_API_KEY`
+   - `EMAIL_USER`
+   - `EMAIL_PASS`
+   - `EMAIL_TO` (optional)
+3. Edit `.github/workflows/agent.yml` and add `alex` to the matrix list:
+
+```yaml
+profile: [pallab, alex]
+```
+
+After that, scheduled runs will include `alex`, and emails will be sent using Alex's environment secrets.
+
+### Manual Run for One Profile
+
+The workflow has a `profile` input.
+
+- Leave it empty: runs all profiles in the matrix
+- Set it to `alex`: runs only the `alex` matrix job
+
+Important:
+
+- The input value must match a profile name in the matrix
+- The profile name must also match the GitHub Environment name
+
 ## Gmail Setup (App Password)
 
 If using Gmail SMTP:
 
-1. Enable 2-Step Verification on the Google account
-2. Create an App Password
+1. Enable 2-Step Verification on the Google account:
+   - https://myaccount.google.com/security
+2. Create an App Password:
+   - https://myaccount.google.com/apppasswords
 3. Use that App Password as `EMAIL_PASS`
 
 Do not use your normal Gmail password.
+
+Reference (Google Help):
+- https://support.google.com/accounts/answer/185833
 
 ## Troubleshooting
 
@@ -177,6 +231,7 @@ Do not use your normal Gmail password.
 - Core workflow logic: `job_agent/agent.py`
 - Keep the GitHub Actions workflow minimal; put logic in Python modules
 - `.job_agent/` is ignored in git because it contains local snapshot state
+- For multi-user scheduling, keep the workflow `matrix.profile` list in sync with GitHub Environment names
 
 ## Roadmap (Planned)
 

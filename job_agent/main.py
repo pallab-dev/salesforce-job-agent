@@ -10,6 +10,11 @@ from job_agent.config import default_seen_jobs_path, load_settings
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="AI job alert agent (Groq + Gmail)")
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help="Profile name used for per-profile snapshot storage (e.g. GitHub Actions environment name)",
+    )
     parser.add_argument("--keyword", default="developer", help="Keyword to match in job titles")
     parser.add_argument(
         "--llm-input-limit",
@@ -36,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--seen-file",
         type=Path,
-        default=default_seen_jobs_path(),
+        default=None,
         help="Path to seen jobs JSON file",
     )
     return parser
@@ -47,12 +52,13 @@ def main() -> int:
     args = parser.parse_args()
 
     options = AgentOptions(
+        profile=(args.profile or "").strip() or None,
         keyword=args.keyword,
         llm_input_limit=max(1, args.llm_input_limit),
         max_bullets=max(1, args.max_bullets),
         dry_run=args.dry_run,
         dedupe_enabled=not args.disable_dedupe,
-        seen_jobs_file=args.seen_file,
+        seen_jobs_file=args.seen_file or default_seen_jobs_path(args.profile),
     )
 
     try:
@@ -68,4 +74,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

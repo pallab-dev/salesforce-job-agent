@@ -10,13 +10,16 @@ def send_email(
     smtp_port: int,
     email_user: str,
     email_pass: str,
+    email_to: str | None,
     subject: str,
     body: str,
 ) -> None:
+    recipient = (email_to or "").strip() or email_user
+
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = email_user
-    message["To"] = email_user
+    message["To"] = recipient
     message.set_content(body, charset="utf-8")
 
     server = smtplib.SMTP(smtp_host, smtp_port)
@@ -28,4 +31,3 @@ def send_email(
         server.send_message(message)
     finally:
         server.quit()
-
