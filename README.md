@@ -49,7 +49,7 @@ config/
   profiles/
     default.yml            # profile defaults (config-driven behavior)
   sources/
-    companies.yml          # placeholder for future ATS/company source lists
+    companies.yml          # Greenhouse/Lever/Workday company board source config
 
 job_agent/
   main.py                  # CLI entrypoint
@@ -191,6 +191,7 @@ What this gives you today:
 
 - Change keyword per profile without editing Python
 - Prepare source lists per profile (`remoteok` and `remotive` currently implemented)
+- Add many company boards via config only (Greenhouse/Lever adapters now implemented)
 - Change LLM/email output limits per profile
 
 Shared config mode (recommended if all users should behave the same):
@@ -201,8 +202,56 @@ Shared config mode (recommended if all users should behave the same):
 
 Note:
 
-- If you add an unimplemented source (for example `greenhouse` before its adapter exists) the agent will print a skip message and continue.
+- If you add an unimplemented source (for example `workday` before its adapter exists) the agent will print a skip message and continue.
 - This is the first step toward fully config-driven multi-source support.
+
+### Company Board Plugins (Greenhouse / Lever)
+
+You can now enable company career pages (via ATS platforms) without changing Python code.
+
+Supported plugins:
+
+- `greenhouse`
+- `lever`
+- `workday` (starter/custom path implemented; company-specific endpoints may still be needed)
+
+Add them to your shared profile config (already enabled in `config/profiles/default.yml` in this repo):
+
+```yaml
+sources:
+  - remoteok
+  - remotive
+  - greenhouse
+  - lever
+```
+
+Then configure companies in `config/sources/companies.yml`:
+
+```yaml
+greenhouse:
+  - company: ExampleCo
+    board_token: exampleco
+    active: true
+
+lever:
+  - company: ExampleOrg
+    company_slug: exampleorg
+    active: true
+
+workday:
+  - company: ExampleBigCo
+    platform: custom
+    careers_url: https://careers.example.com/jobs
+    active: false
+```
+
+Notes:
+
+- These adapters are best for company career pages at scale (many companies use Greenhouse/Lever)
+- If one company token/slug fails, the agent logs it and continues
+- For India-focused coverage, add India companies that use these platforms
+- FAANG + Salesforce targets are added in `config/sources/companies.yml` under `workday` as planned entries
+- The `workday` plugin path is now implemented as a starter, but most companies will still need company-specific `api_url` values (or dedicated adapters) before they return jobs
 
 ## GitHub Actions Setup
 
@@ -246,7 +295,7 @@ How it works:
 - The workflow initializes the schema (`python -m job_agent.db_main db init`)
 - The workflow runs all active DB users (`python -m job_agent.db_main run --all-users`)
 - Users are stored in PostgreSQL (`users` table) with `username` + `email_to`
-- User-specific preferences (optional) are stored in `user_preferences`
+- User-specific preferences (optional) are stored in `user_preferences` (keyword/limits/filters; sources stay in shared YAML config)
 - Shared defaults continue to come from `config/profiles/default.yml`
 
 ### What You Need To Sign Up For (Free)
@@ -289,7 +338,6 @@ python -m job_agent.db_main users add \
   --username saikia \
   --email-to saikia@example.com \
   --keyword "salesforce developer" \
-  --sources remoteok,remotive \
   --llm-input-limit 25 \
   --max-bullets 12
 ```
@@ -311,6 +359,7 @@ Optional config-driven defaults:
 
 - Keep only `config/profiles/default.yml` for shared defaults
 - Add `config/profiles/<username>.yml` only if needed
+- Sources are intentionally config-driven now (not stored in DB)
 
 ### Manual Run for One DB User
 

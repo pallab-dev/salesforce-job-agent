@@ -1,7 +1,74 @@
-# Future config-driven company sources (examples)
-# Add companies here once greenhouse/lever/workday adapters are implemented.
+# Company board source config (Greenhouse / Lever / future Workday)
+# Add entries and set active: true to fetch from those company career boards.
+# This lets you add many company sources without changing Python code.
+#
+# Notes:
+# - Greenhouse uses "board_token" (the company board slug in Greenhouse URLs)
+# - Lever uses "company_slug" (the slug in api.lever.co/v0/postings/<slug>)
+# - Keep only companies you care about to avoid noise and rate limits
+# - Most FAANG + Salesforce career pages are not Greenhouse/Lever (often Workday/custom)
+# - Add FAANG/Salesforce targets below so we can wire them quickly when Workday/custom adapters are implemented
 
-greenhouse: []
-lever: []
-workday: []
+greenhouse:
+  # Postman (Greenhouse board token verified)
+  - company: Postman
+    board_token: postman
+    active: true
+# India / India-hiring examples (verify tokens before enabling)
+# greenhouse:
+#   - company: Razorpay
+#     board_token: razorpay
+#     active: true
+#   - company: Postman
+#     board_token: postman
+#     active: true
 
+lever:
+  # Global companies that often have India roles (Lever slugs verified by public job pages)
+  - company: Dun & Bradstreet
+    company_slug: dnb
+    active: true
+  - company: Veeva
+    company_slug: veeva
+    active: true
+# Examples (verify slugs before enabling)
+# lever:
+#   - company: BrowserStack
+#     company_slug: browserstack
+#     active: true
+#   - company: Freshworks
+#     company_slug: freshworks
+#     active: true
+
+workday:
+  # Planned targets (most are Workday/custom; adapter not implemented yet)
+  - company: Amazon
+    careers_url: https://www.amazon.jobs/
+    platform: custom
+    active: false
+  - company: Apple
+    careers_url: https://jobs.apple.com/
+    platform: custom
+    active: false
+  - company: Google
+    careers_url: https://www.google.com/about/careers/applications/jobs/results/
+    platform: custom
+    active: false
+  - company: Meta
+    careers_url: https://www.metacareers.com/jobs
+    platform: custom
+    active: false
+  - company: Netflix
+    careers_url: https://jobs.netflix.com/
+    platform: custom
+    active: false
+  - company: Salesforce
+    careers_url: https://careers.salesforce.com/en/jobs/
+    platform: custom
+    active: false
+  # Example of how to wire a future Workday/custom JSON endpoint once known:
+  # - company: SomeCompany
+  #   platform: workday
+  #   careers_url: https://somecompany.wd5.myworkdayjobs.com/...
+  #   api_url: https://somecompany.wd5.myworkdayjobs.com/wday/cxs/somecompany/site/jobs
+  #   active: true

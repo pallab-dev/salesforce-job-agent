@@ -25,7 +25,6 @@ def build_parser() -> argparse.ArgumentParser:
     add_user.add_argument("--timezone", default=None)
     add_user.add_argument("--inactive", action="store_true")
     add_user.add_argument("--keyword", default=None)
-    add_user.add_argument("--sources", default=None, help="Comma-separated list (e.g. remoteok,remotive)")
     add_user.add_argument("--llm-input-limit", type=int, default=None)
     add_user.add_argument("--max-bullets", type=int, default=None)
     add_user.add_argument("--remote-only", dest="remote_only", action="store_true")
@@ -91,12 +90,10 @@ def _handle_users(args: argparse.Namespace) -> int:
                 timezone=args.timezone,
                 is_active=not args.inactive,
             )
-            sources = _parse_sources(args.sources)
             if any(
                 value is not None
                 for value in (
                     args.keyword,
-                    sources,
                     args.llm_input_limit,
                     args.max_bullets,
                     args.remote_only,
@@ -107,7 +104,6 @@ def _handle_users(args: argparse.Namespace) -> int:
                     conn,
                     user_id=user.id,
                     keyword=args.keyword,
-                    sources=sources,
                     llm_input_limit=args.llm_input_limit,
                     max_bullets=args.max_bullets,
                     remote_only=args.remote_only,
@@ -123,11 +119,10 @@ def _handle_users(args: argparse.Namespace) -> int:
                 return 0
             for user in users:
                 prefs = postgres_db.get_user_preferences(conn, user.id)
-                sources = ",".join(prefs.sources or []) if prefs and prefs.sources else "-"
                 keyword = prefs.keyword if prefs and prefs.keyword else "-"
                 print(
                     f"{user.username}\tactive={user.is_active}\temail_to={user.email_to}\t"
-                    f"keyword={keyword}\tsources={sources}"
+                    f"keyword={keyword}"
                 )
             return 0
 
@@ -160,14 +155,6 @@ def _handle_run(args: argparse.Namespace) -> int:
             run_type="manual",
         )
     raise RuntimeError("Either --all-users or --user is required")
-
-
-def _parse_sources(value: str | None) -> list[str] | None:
-    if value is None:
-        return None
-    result = [part.strip().lower() for part in value.split(",") if part.strip()]
-    return result or None
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

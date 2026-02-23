@@ -50,7 +50,7 @@ def run_all_users_from_db(
             options = AgentOptions(
                 profile=user.username,
                 keyword=(prefs.keyword if prefs and prefs.keyword else profile_cfg.keyword),
-                sources=(prefs.sources if prefs and prefs.sources else profile_cfg.sources),
+                sources=profile_cfg.sources,
                 llm_input_limit=(
                     prefs.llm_input_limit
                     if prefs and prefs.llm_input_limit is not None
@@ -132,7 +132,7 @@ def run_single_user_from_db(
         options = AgentOptions(
             profile=user.username,
             keyword=(prefs.keyword if prefs and prefs.keyword else profile_cfg.keyword),
-            sources=(prefs.sources if prefs and prefs.sources else profile_cfg.sources),
+            sources=profile_cfg.sources,
             llm_input_limit=(
                 prefs.llm_input_limit if prefs and prefs.llm_input_limit is not None else profile_cfg.llm_input_limit
             ),
@@ -144,4 +144,3 @@ def run_single_user_from_db(
         )
 
         return run_agent(user_settings, options)
-

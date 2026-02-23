@@ -14,7 +14,6 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS user_preferences (
   user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   keyword TEXT,
-  sources_jsonb JSONB,
   llm_input_limit INTEGER,
   max_bullets INTEGER,
   remote_only BOOLEAN,
@@ -22,6 +21,10 @@ CREATE TABLE IF NOT EXISTS user_preferences (
   profile_overrides_jsonb JSONB,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Migration cleanup: sources are now config-driven (YAML/shared config), not DB-driven.
+ALTER TABLE user_preferences
+  DROP COLUMN IF EXISTS sources_jsonb;
 
 CREATE TABLE IF NOT EXISTS user_state (
   user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -68,4 +71,3 @@ CREATE INDEX IF NOT EXISTS idx_run_logs_user_started_at
 
 CREATE INDEX IF NOT EXISTS idx_sent_job_records_user_last_seen
   ON sent_job_records (user_id, last_seen_at DESC);
-

@@ -26,7 +26,6 @@ class DbUser:
 class DbUserPreferences:
     user_id: int
     keyword: str | None
-    sources: list[str] | None
     llm_input_limit: int | None
     max_bullets: int | None
     remote_only: bool | None
@@ -118,7 +117,6 @@ def set_user_preferences(
     *,
     user_id: int,
     keyword: str | None = None,
-    sources: list[str] | None = None,
     llm_input_limit: int | None = None,
     max_bullets: int | None = None,
     remote_only: bool | None = None,
@@ -129,14 +127,13 @@ def set_user_preferences(
         cur.execute(
             """
             INSERT INTO user_preferences (
-              user_id, keyword, sources_jsonb, llm_input_limit, max_bullets,
+              user_id, keyword, llm_input_limit, max_bullets,
               remote_only, strict_senior_only, profile_overrides_jsonb, updated_at
             )
-            VALUES (%s, %s, %s::jsonb, %s, %s, %s, %s, %s::jsonb, NOW())
+            VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, NOW())
             ON CONFLICT (user_id)
             DO UPDATE SET
               keyword = EXCLUDED.keyword,
-              sources_jsonb = EXCLUDED.sources_jsonb,
               llm_input_limit = EXCLUDED.llm_input_limit,
               max_bullets = EXCLUDED.max_bullets,
               remote_only = EXCLUDED.remote_only,
@@ -147,7 +144,6 @@ def set_user_preferences(
             (
                 user_id,
                 _none_or_str(keyword),
-                _json_dumps_or_none(sources),
                 llm_input_limit,
                 max_bullets,
                 remote_only,
@@ -162,7 +158,7 @@ def get_user_preferences(conn: psycopg.Connection, user_id: int) -> DbUserPrefer
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT user_id, keyword, sources_jsonb, llm_input_limit, max_bullets,
+            SELECT user_id, keyword, llm_input_limit, max_bullets,
                    remote_only, strict_senior_only, profile_overrides_jsonb
             FROM user_preferences
             WHERE user_id = %s
@@ -177,7 +173,6 @@ def get_user_preferences(conn: psycopg.Connection, user_id: int) -> DbUserPrefer
     return DbUserPreferences(
         user_id=int(row["user_id"]),
         keyword=row.get("keyword"),
-        sources=_parse_json_list(row.get("sources_jsonb")),
         llm_input_limit=row.get("llm_input_limit"),
         max_bullets=row.get("max_bullets"),
         remote_only=row.get("remote_only"),
