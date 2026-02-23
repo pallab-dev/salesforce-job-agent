@@ -40,7 +40,7 @@ def _require_env(settings: Settings, *, require_email: bool) -> None:
         raise RuntimeError(f"Missing required environment variables: {', '.join(missing)}")
 
 
-def _apply_dedupe(
+def _load_previous_snapshot(
     jobs: list[dict[str, Any]],
     *,
     dedupe_enabled: bool,
@@ -52,9 +52,8 @@ def _apply_dedupe(
     store = SeenJobsStore(seen_jobs_file)
     seen_before = store.load()
     keys_by_job = [(stable_job_key(job), job) for job in jobs]
-    new_jobs = [job for key, job in keys_by_job if key and key not in seen_before]
-    processed_keys = [key for key, _ in keys_by_job if key]
-    return new_jobs, store, seen_before, processed_keys
+    current_keys = [key for key, _ in keys_by_job if key]
+    return jobs, store, seen_before, current_keys
 
 
 def run_agent(settings: Settings, options: AgentOptions) -> int:
@@ -67,21 +66,20 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
         print(f"No jobs found for keyword: {options.keyword}")
         return 0
 
-    candidate_jobs, store, seen_before, processed_keys = _apply_dedupe(
+    candidate_jobs, store, seen_before, current_keys = _load_previous_snapshot(
         keyword_jobs,
         dedupe_enabled=options.dedupe_enabled,
         seen_jobs_file=options.seen_jobs_file,
     )
 
     if options.dedupe_enabled and store is not None:
+        current_set = set(current_keys)
+        added = len(current_set - seen_before)
+        removed = len(seen_before - current_set)
         print(
             f"Keyword-matched jobs: {len(keyword_jobs)} | "
-            f"new after dedupe: {len(candidate_jobs)} | seen stored: {len(seen_before)}"
+            f"added since last run: {added} | removed since last run: {removed}"
         )
-
-    if not candidate_jobs:
-        print("No new jobs after dedupe. Skipping AI + email.")
-        return 0
 
     jobs_for_llm = llm_payload(candidate_jobs, limit=options.llm_input_limit)
     raw_output = filter_jobs_with_groq(
@@ -97,7 +95,7 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
     if cleaned_output == "NONE":
         print("Model found no relevant jobs. Skipping email.")
         if options.dedupe_enabled and store is not None:
-            store.save(seen_before.union(processed_keys))
+            store.save(set(current_keys))
         return 0
 
     if options.dry_run:
@@ -115,6 +113,6 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
         print("Email sent successfully!")
 
     if options.dedupe_enabled and store is not None:
-        store.save(seen_before.union(processed_keys))
+        store.save(set(current_keys))
 
     return 0
