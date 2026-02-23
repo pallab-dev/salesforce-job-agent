@@ -1,0 +1,13 @@
+keyword: developer
+
+sources:
+  - remoteok
+  - remotive
+
+limits:
+  llm_input_limit: 15
+  max_bullets: 8
+
+filters:
+  remote_only: true
+  strict_senior_only: true

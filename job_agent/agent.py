@@ -7,8 +7,8 @@ from typing import Any
 from job_agent.config import Settings
 from job_agent.llm.groq import filter_jobs_with_groq
 from job_agent.notify.emailer import send_email
+from job_agent.sources.registry import fetch_jobs_from_sources
 from job_agent.sources.remoteok import (
-    fetch_jobs,
     filter_jobs_by_keyword,
     llm_payload,
     stable_job_key,
@@ -21,6 +21,7 @@ from job_agent.utils.cleaning import clean_llm_output
 class AgentOptions:
     profile: str | None = None
     keyword: str = "developer"
+    sources: list[str] | None = None
     llm_input_limit: int = 15
     max_bullets: int = 8
     dry_run: bool = False
@@ -60,7 +61,8 @@ def _load_previous_snapshot(
 def run_agent(settings: Settings, options: AgentOptions) -> int:
     _require_env(settings, require_email=not options.dry_run)
 
-    jobs = fetch_jobs(settings.remoteok_api_url, settings.request_timeout_seconds)
+    jobs = fetch_jobs_from_sources(settings, options.sources or ["remoteok"])
+    print(f"Fetched jobs from sources: {', '.join(options.sources or ['remoteok'])} | total: {len(jobs)}")
     keyword_jobs = filter_jobs_by_keyword(jobs, options.keyword)
 
     if not keyword_jobs:

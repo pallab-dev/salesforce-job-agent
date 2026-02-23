@@ -1,0 +1,7 @@
+# Future config-driven company sources (examples)
+# Add companies here once greenhouse/lever/workday adapters are implemented.
+
+greenhouse: []
+lever: []
+workday: []
+

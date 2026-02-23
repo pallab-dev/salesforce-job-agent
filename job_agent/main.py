@@ -6,6 +6,7 @@ from pathlib import Path
 
 from job_agent.agent import AgentOptions, run_agent
 from job_agent.config import default_seen_jobs_path, load_settings
+from job_agent.profile_config import load_profile_config, parse_sources_cli
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -15,18 +16,23 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Profile name used for per-profile snapshot storage (e.g. GitHub Actions environment name)",
     )
-    parser.add_argument("--keyword", default="developer", help="Keyword to match in job titles")
+    parser.add_argument("--keyword", default=None, help="Keyword to match in job titles (overrides profile config)")
+    parser.add_argument(
+        "--sources",
+        default=None,
+        help="Comma-separated source list (e.g. remoteok,remotive). Overrides profile config.",
+    )
     parser.add_argument(
         "--llm-input-limit",
         type=int,
-        default=15,
-        help="Max jobs sent to the LLM prompt",
+        default=None,
+        help="Max jobs sent to the LLM prompt (overrides profile config)",
     )
     parser.add_argument(
         "--max-bullets",
         type=int,
-        default=8,
-        help="Max bullets expected from the LLM and included in email",
+        default=None,
+        help="Max bullets expected from the LLM and included in email (overrides profile config)",
     )
     parser.add_argument(
         "--dry-run",
@@ -44,24 +50,39 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Path to seen jobs JSON file",
     )
+    parser.add_argument(
+        "--profile-config",
+        type=Path,
+        default=None,
+        help="Path to a profile YAML config file (defaults to config/profiles/<profile>.yml)",
+    )
     return parser
 
 
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    profile_name = (args.profile or "").strip() or None
+    profile_cfg = load_profile_config(profile_name, args.profile_config)
+    cli_sources = parse_sources_cli(args.sources)
 
     options = AgentOptions(
-        profile=(args.profile or "").strip() or None,
-        keyword=args.keyword,
-        llm_input_limit=max(1, args.llm_input_limit),
-        max_bullets=max(1, args.max_bullets),
+        profile=profile_name,
+        keyword=(args.keyword or profile_cfg.keyword).strip() or profile_cfg.keyword,
+        sources=cli_sources or profile_cfg.sources,
+        llm_input_limit=max(1, args.llm_input_limit or profile_cfg.llm_input_limit),
+        max_bullets=max(1, args.max_bullets or profile_cfg.max_bullets),
         dry_run=args.dry_run,
         dedupe_enabled=not args.disable_dedupe,
         seen_jobs_file=args.seen_file or default_seen_jobs_path(args.profile),
     )
 
     try:
+        print(
+            f"Profile config resolved: name={profile_cfg.name} "
+            f"keyword={options.keyword} sources={','.join(options.sources or [])} "
+            f"llm_input_limit={options.llm_input_limit} max_bullets={options.max_bullets}"
+        )
         settings = load_settings()
         return run_agent(settings, options)
     except KeyboardInterrupt:

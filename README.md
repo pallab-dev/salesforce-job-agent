@@ -34,11 +34,20 @@ The file `.job_agent/seen_jobs.json` stores the previous run snapshot so the age
 ## Project Structure
 
 ```text
+config/
+  profiles/
+    default.yml            # profile defaults (config-driven behavior)
+    pallab.yml             # example profile config
+  sources/
+    companies.yml          # placeholder for future ATS/company source lists
+
 job_agent/
   main.py                  # CLI entrypoint
   config.py                # env/config loading
+  profile_config.py        # YAML profile config loader
   agent.py                 # orchestration logic
   sources/remoteok.py      # job source integration
+  sources/registry.py      # source selection/aggregation (config-driven)
   llm/groq.py              # Groq API call + prompt
   notify/emailer.py        # Gmail SMTP sender
   utils/cleaning.py        # LLM output cleanup
@@ -120,15 +129,62 @@ Profile-based run (stores snapshot state separately per profile):
 python -m job_agent.main --profile pallab --keyword developer
 ```
 
+Profile config-driven run (no keyword/limits flags needed if configured in YAML):
+
+```bash
+python -m job_agent.main --profile pallab
+```
+
 Useful options:
 
 - `--keyword` title keyword match (default `developer`)
 - `--profile` profile name used for per-profile snapshot file paths
-- `--llm-input-limit` max jobs sent to Groq (default `15`)
-- `--max-bullets` max bullet results in output/email (default `8`)
+- `--sources` comma-separated sources (overrides profile YAML, e.g. `remoteok,remotive`)
+- `--llm-input-limit` max jobs sent to Groq (overrides profile YAML)
+- `--max-bullets` max bullet results in output/email (overrides profile YAML)
 - `--dry-run` print instead of email
 - `--disable-dedupe` disables previous/current snapshot comparison
 - `--seen-file` custom snapshot file path (default `.job_agent/seen_jobs.json`)
+- `--profile-config` custom YAML config path (default `config/profiles/<profile>.yml`)
+
+## Config-Driven Profiles (New)
+
+You can now control profile behavior from YAML instead of hardcoding values in Python.
+
+Default lookup:
+
+- `--profile pallab` -> `config/profiles/pallab.yml`
+- no `--profile` -> `config/profiles/default.yml` (if present)
+- missing file -> built-in defaults are used safely
+
+Example `config/profiles/pallab.yml`:
+
+```yaml
+keyword: developer
+
+sources:
+  - remoteok
+  - remotive
+
+limits:
+  llm_input_limit: 15
+  max_bullets: 8
+
+filters:
+  remote_only: true
+  strict_senior_only: true
+```
+
+What this gives you today:
+
+- Change keyword per profile without editing Python
+- Prepare source lists per profile (`remoteok` and `remotive` currently implemented)
+- Change LLM/email output limits per profile
+
+Note:
+
+- If you add an unimplemented source (for example `greenhouse` before its adapter exists) the agent will print a skip message and continue.
+- This is the first step toward fully config-driven multi-source support.
 
 ## GitHub Actions Setup
 
@@ -184,6 +240,10 @@ profile: [pallab, alex]
 ```
 
 After that, scheduled runs will include `alex`, and emails will be sent using Alex's environment secrets.
+
+Optional (config-driven profile settings):
+
+- Add `config/profiles/alex.yml` to customize keyword/sources/limits for Alex without changing Python code.
 
 ### Manual Run for One Profile
 
