@@ -63,9 +63,11 @@ workday:
     platform: custom
     active: false
   - company: Salesforce
+    listing_url: https://careers.salesforce.com/jobs
     careers_url: https://careers.salesforce.com/en/jobs/
-    platform: custom
-    active: false
+    platform: salesforce_careers
+    max_pages: 5
+    active: true
   # Example of how to wire a future Workday/custom JSON endpoint once known:
   # - company: SomeCompany
   #   platform: workday

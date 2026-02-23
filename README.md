@@ -214,6 +214,7 @@ Supported plugins:
 - `greenhouse`
 - `lever`
 - `workday` (starter/custom path implemented; company-specific endpoints may still be needed)
+- `workday` / `custom` / `salesforce_careers` (via the `workday` plugin path)
 
 Add them to your shared profile config (already enabled in `config/profiles/default.yml` in this repo):
 
@@ -243,6 +244,11 @@ workday:
     platform: custom
     careers_url: https://careers.example.com/jobs
     active: false
+  - company: Salesforce
+    platform: salesforce_careers
+    listing_url: https://careers.salesforce.com/jobs
+    max_pages: 5
+    active: true
 ```
 
 Notes:
@@ -251,7 +257,8 @@ Notes:
 - If one company token/slug fails, the agent logs it and continues
 - For India-focused coverage, add India companies that use these platforms
 - FAANG + Salesforce targets are added in `config/sources/companies.yml` under `workday` as planned entries
-- The `workday` plugin path is now implemented as a starter, but most companies will still need company-specific `api_url` values (or dedicated adapters) before they return jobs
+- Salesforce is wired now via the `salesforce_careers` listing parser (configured under `workday`)
+- Most other FAANG targets will still need company-specific `api_url` values (or dedicated adapters) before they return jobs
 
 ## GitHub Actions Setup
 

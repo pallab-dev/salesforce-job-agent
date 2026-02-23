@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+import re
 from typing import Any
 
 import requests
@@ -17,6 +19,9 @@ def fetch_jobs(company_entries: list[dict[str, Any]], timeout_seconds: int) -> l
         try:
             if platform == "workday":
                 jobs.extend(_fetch_workday_jobs(entry, company_label, timeout_seconds))
+                continue
+            if platform == "salesforce_careers":
+                jobs.extend(_fetch_salesforce_careers_jobs(entry, company_label, timeout_seconds))
                 continue
             if platform == "custom":
                 jobs.extend(_fetch_custom_jobs(entry, company_label, timeout_seconds))
@@ -74,6 +79,103 @@ def _fetch_workday_jobs(entry: dict[str, Any], company_label: str, timeout_secon
     return out
 
 
+def _fetch_salesforce_careers_jobs(
+    entry: dict[str, Any],
+    company_label: str,
+    timeout_seconds: int,
+) -> list[dict[str, Any]]:
+    base_url = str(entry.get("listing_url") or entry.get("careers_url") or "https://careers.salesforce.com/jobs").strip()
+    max_pages = int(entry.get("max_pages") or 3)
+    max_pages = max(1, min(max_pages, 20))
+
+    jobs: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for page in range(1, max_pages + 1):
+        page_url = _salesforce_jobs_page_url(base_url, page)
+        response = requests.get(page_url, timeout=timeout_seconds)
+        response.raise_for_status()
+        html_text = response.text
+
+        page_jobs = _parse_salesforce_jobs_listing_html(
+            html_text,
+            company_label=company_label,
+            source_key=str(entry.get("source_key") or "salesforce"),
+            page_url=page_url,
+        )
+        if not page_jobs:
+            # Stop early if a page produces no listings (end of pagination or parser mismatch).
+            if page > 1:
+                break
+        for job in page_jobs:
+            url = str(job.get("url") or "")
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            jobs.append(job)
+    return jobs
+
+
+def _salesforce_jobs_page_url(base_url: str, page: int) -> str:
+    sep = "&" if "?" in base_url else "?"
+    if "page=" in base_url:
+        return re.sub(r"([?&])page=\d+", rf"\1page={page}", base_url)
+    return f"{base_url}{sep}page={page}"
+
+
+def _parse_salesforce_jobs_listing_html(
+    html_text: str,
+    *,
+    company_label: str,
+    source_key: str,
+    page_url: str,
+) -> list[dict[str, Any]]:
+    jobs: list[dict[str, Any]] = []
+
+    # Match links to Salesforce job detail pages and capture anchor text as title.
+    # Example path: /en/jobs/jr321973/sr-salesforce-developer/
+    pattern = re.compile(
+        r'<a[^>]+href="(?P<href>/(?:(?:en|ja|de|fr|es|it|ko|nl|sv)/)?jobs/[^"]+)"[^>]*>(?P<title>.*?)</a>',
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    seen: set[str] = set()
+    for match in pattern.finditer(html_text):
+        href = html.unescape(match.group("href")).strip()
+        title = _clean_html_text(match.group("title"))
+        if not title:
+            continue
+        if href in seen:
+            continue
+        seen.add(href)
+
+        full_url = f"https://careers.salesforce.com{href}" if href.startswith("/") else href
+        jobs.append(
+            {
+                "_source": "salesforce_careers",
+                "id": _salesforce_job_id_from_url(full_url),
+                "position": title,
+                "company": company_label,
+                "url": full_url,
+                "description": "",
+                "location": "",
+                "listing_page": page_url,
+                "raw": {"href": href},
+            }
+        )
+    return jobs
+
+
+def _salesforce_job_id_from_url(url: str) -> str:
+    match = re.search(r"/jobs/([^/]+)/", url)
+    return match.group(1) if match else url
+
+
+def _clean_html_text(text: str) -> str:
+    text = re.sub(r"<[^>]+>", "", text)
+    text = html.unescape(text)
+    return " ".join(text.split())
+
+
 def _fetch_custom_jobs(entry: dict[str, Any], company_label: str, timeout_seconds: int) -> list[dict[str, Any]]:
     # Generic custom support path:
     # 1) json_url (preferred)
@@ -128,4 +230,3 @@ def _parse_custom_json_payload(
             }
         )
     return out
-
