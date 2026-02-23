@@ -26,8 +26,12 @@ def default_profile_config_path(profile_name: str | None) -> Path:
 def load_profile_config(profile_name: str | None, config_path: Path | None = None) -> ProfileConfig:
     name = (profile_name or "default").strip() or "default"
     path = config_path or default_profile_config_path(profile_name)
+    shared_default_path = default_profile_config_path("default")
 
     if not path.exists():
+        if path != shared_default_path and shared_default_path.exists():
+            data = _read_yaml_mapping(shared_default_path)
+            return _parse_profile_config(name=name, data=data)
         return ProfileConfig(name=name)
 
     data = _read_yaml_mapping(path)
@@ -93,4 +97,3 @@ def parse_sources_cli(value: str | None) -> list[str] | None:
     items = [item.strip().lower() for item in value.split(",")]
     result = [item for item in items if item]
     return result or None
-

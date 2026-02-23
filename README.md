@@ -153,9 +153,10 @@ You can now control profile behavior from YAML instead of hardcoding values in P
 
 Default lookup:
 
-- `--profile pallab` -> `config/profiles/pallab.yml`
+- `--profile pallab` -> `config/profiles/pallab.yml` (if present)
 - no `--profile` -> `config/profiles/default.yml` (if present)
-- missing file -> built-in defaults are used safely
+- missing profile file -> falls back to `config/profiles/default.yml`
+- if `default.yml` is also missing -> built-in defaults are used safely
 
 Example `config/profiles/pallab.yml`:
 
@@ -180,6 +181,12 @@ What this gives you today:
 - Change keyword per profile without editing Python
 - Prepare source lists per profile (`remoteok` and `remotive` currently implemented)
 - Change LLM/email output limits per profile
+
+Shared config mode (recommended if all users should behave the same):
+
+- Keep only `config/profiles/default.yml`
+- Do not create `config/profiles/<profile>.yml` unless a user needs custom settings
+- `--profile pallab` / `--profile saikia` will automatically use `default.yml` when their profile file is missing
 
 Note:
 
