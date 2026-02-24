@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 from typing import Any
+from urllib.parse import urlparse
 
 from job_agent.config import Settings
 from job_agent.llm.groq import filter_jobs_with_groq
@@ -16,6 +18,62 @@ from job_agent.sources.remoteok import (
 from job_agent.storage.seen_jobs import SeenJobsStore
 from job_agent.utils.cleaning import clean_llm_output
 
+MAX_LLM_INPUT_JOBS = 80
+MAX_LLM_JOBS_PER_COMPANY = 3
+COMPANY_OPPORTUNITY_NOTE_THRESHOLD = 4
+MAX_CARRYOVER_EMAIL_JOBS = 10
+MAX_CARRYOVER_AGE_DAYS = 14
+SOFTWARE_FOCUS_HINTS = (
+    "developer",
+    "engineer",
+    "software",
+    "backend",
+    "frontend",
+    "full stack",
+    "full-stack",
+    "java",
+    "python",
+    "golang",
+    "node",
+    "sde",
+)
+SOFTWARE_TITLE_POSITIVE_TERMS = (
+    "engineer",
+    "developer",
+    "software",
+    "backend",
+    "frontend",
+    "full stack",
+    "full-stack",
+    "platform",
+    "sde",
+)
+SOFTWARE_TITLE_HARD_NEGATIVE_TERMS = (
+    "recruiter",
+    "talent acquisition",
+    "account executive",
+    "sales representative",
+    "sales manager",
+    "business development",
+    "customer support",
+    "customer success",
+    "support specialist",
+    "support representative",
+    "marketing manager",
+    "brand manager",
+)
+SOFTWARE_TITLE_SOFT_NEGATIVE_TERMS = (
+    "qa ",
+    "quality assurance",
+    "manual tester",
+    "technical writer",
+    "project manager",
+    "program manager",
+    "scrum master",
+    "product manager",
+    "analyst",
+)
+
 
 @dataclass(frozen=True)
 class AgentOptions:
@@ -27,12 +85,16 @@ class AgentOptions:
     llm_input_limit: int = 15
     max_bullets: int = 8
     dry_run: bool = False
+    prefetched_jobs: list[dict[str, Any]] | None = None
+    metrics_store: Any | None = None
     dedupe_enabled: bool = True
     seen_jobs_file: Path | None = None
     snapshot_store: Any | None = None
+    sent_jobs_store: Any | None = None
     experience_level: str | None = None
     target_roles: list[str] | None = None
     tech_stack_tags: list[str] | None = None
+    negative_keywords: list[str] | None = None
     alert_frequency: str | None = None
     primary_goal: str | None = None
 
@@ -92,6 +154,108 @@ def _normalize_terms(items: list[str] | None) -> list[str]:
     return out
 
 
+def _looks_like_software_focus(options: AgentOptions) -> bool:
+    keyword = (options.keyword or "").strip().lower()
+    if any(term in keyword for term in SOFTWARE_FOCUS_HINTS):
+        return True
+    targets = " ".join(_normalize_terms(options.target_roles))
+    return any(term in targets for term in SOFTWARE_FOCUS_HINTS)
+
+
+def _title_matches_any(title: str, terms: tuple[str, ...]) -> bool:
+    return any(term in title for term in terms)
+
+
+def _is_obviously_irrelevant_for_software(job: dict[str, Any], options: AgentOptions) -> bool:
+    if not _looks_like_software_focus(options):
+        return False
+    title = str(job.get("position") or "").strip().lower()
+    if not title:
+        return False
+    # Only hard-exclude if title looks non-software and lacks obvious software signals.
+    if _title_matches_any(title, SOFTWARE_TITLE_HARD_NEGATIVE_TERMS) and not _title_matches_any(
+        title, SOFTWARE_TITLE_POSITIVE_TERMS
+    ):
+        return True
+    return False
+
+
+def _keyword_score(job: dict[str, Any], keyword: str) -> int:
+    needle = (keyword or "").strip().lower()
+    if not needle:
+        return 0
+    title = str(job.get("position") or "").lower()
+    desc = str(job.get("description") or "").lower()
+    tags = " ".join(str(t).lower() for t in (job.get("tags") or []) if t)
+    company = str(job.get("company") or "").lower()
+
+    score = 0
+    if needle in title:
+        score += 8
+    elif needle in tags:
+        score += 5
+    elif needle in desc:
+        score += 3
+    elif needle in company:
+        score += 1
+
+    # Boost common engineering aliases for generic keywords like "developer".
+    if needle == "developer":
+        if any(term in title for term in ["engineer", "software engineer", "sde"]):
+            score += 5
+        elif any(term in tags for term in ["engineering", "developer"]):
+            score += 2
+    if "java" in needle:
+        if "java" in title:
+            score += 4
+        elif "java" in tags:
+            score += 2
+    return score
+
+
+def _negative_penalty(job: dict[str, Any], options: AgentOptions) -> int:
+    title = str(job.get("position") or "").lower()
+    desc = str(job.get("description") or "").lower()
+    penalty = 0
+
+    if _looks_like_software_focus(options):
+        if _title_matches_any(title, SOFTWARE_TITLE_SOFT_NEGATIVE_TERMS):
+            penalty += 6
+
+    if any(term in title for term in ["intern", "internship", "trainee", "apprentice"]):
+        penalty += 12
+    if options.strict_senior_only and any(term in title for term in ["junior", "jr", "entry", "associate"]):
+        penalty += 10
+    if "contract" in title and "full-time" not in desc:
+        penalty += 2
+
+    # User-configured negative keywords reduce score when they appear in non-title fields.
+    user_negatives = _normalize_terms(options.negative_keywords)
+    if user_negatives:
+        tags = " ".join(str(t).lower() for t in (job.get("tags") or []) if t)
+        company = str(job.get("company") or "").lower()
+        for term in user_negatives:
+            if term and (term in desc or term in tags or term in company):
+                penalty += 8
+                break
+
+    return penalty
+
+
+def _matches_user_negative_title_signal(job: dict[str, Any], options: AgentOptions) -> bool:
+    negatives = _normalize_terms(options.negative_keywords)
+    if not negatives:
+        return False
+    title = str(job.get("position") or "").lower()
+    tags = " ".join(str(t).lower() for t in (job.get("tags") or []) if t)
+    for term in negatives:
+        if not term:
+            continue
+        if term in title or term in tags:
+            return True
+    return False
+
+
 def _score_job_for_profile(job: dict[str, Any], options: AgentOptions) -> int:
     title = str(job.get("position") or "").lower()
     desc = str(job.get("description") or "").lower()
@@ -99,16 +263,19 @@ def _score_job_for_profile(job: dict[str, Any], options: AgentOptions) -> int:
     company = str(job.get("company") or "").lower()
     hay = f"{title}\n{desc}\n{tags}\n{company}"
 
-    score = 0
+    score = _keyword_score(job, options.keyword)
+    if any(term in title for term in SOFTWARE_TITLE_POSITIVE_TERMS):
+        score += 3
+
     for role in _normalize_terms(options.target_roles):
         if role in title:
-            score += 4
+            score += 7
         elif role in hay:
             score += 2
 
     for tag in _normalize_terms(options.tech_stack_tags):
         if tag in title:
-            score += 3
+            score += 5
         elif tag in hay:
             score += 2
 
@@ -125,30 +292,249 @@ def _score_job_for_profile(job: dict[str, Any], options: AgentOptions) -> int:
         if any(term in title for term in ["senior", "staff", "principal"]):
             score -= 1
 
+    score -= _negative_penalty(job, options)
     return score
 
 
 def _rank_jobs_for_profile(jobs: list[dict[str, Any]], options: AgentOptions) -> list[dict[str, Any]]:
     if not jobs:
         return jobs
-    if not any([options.target_roles, options.tech_stack_tags, options.experience_level]):
-        return jobs
+    filtered: list[dict[str, Any]] = []
+    excluded = 0
+    excluded_by_user_negatives = 0
+    for job in jobs:
+        if _is_obviously_irrelevant_for_software(job, options):
+            excluded += 1
+            continue
+        if _matches_user_negative_title_signal(job, options):
+            excluded_by_user_negatives += 1
+            continue
+        filtered.append(job)
+    if excluded:
+        print(f"Deterministic filter excluded {excluded} obviously irrelevant title(s) before LLM")
+    if excluded_by_user_negatives:
+        print(
+            "Deterministic filter excluded "
+            f"{excluded_by_user_negatives} job(s) via user negative keywords before LLM"
+        )
+
     ranked = sorted(
-        jobs,
+        filtered,
         key=lambda job: _score_job_for_profile(job, options),
         reverse=True,
     )
     return ranked
 
 
+def _new_jobs_only(jobs: list[dict[str, Any]], seen_before: set[str]) -> list[dict[str, Any]]:
+    if not seen_before:
+        return jobs
+    out: list[dict[str, Any]] = []
+    for job in jobs:
+        key = stable_job_key(job)
+        if key and key not in seen_before:
+            out.append(job)
+    return out
+
+
+def _cap_jobs_per_company_for_llm(
+    jobs: list[dict[str, Any]],
+    *,
+    max_per_company: int,
+) -> list[dict[str, Any]]:
+    if max_per_company <= 0:
+        return jobs
+    company_counts: dict[str, int] = {}
+    capped: list[dict[str, Any]] = []
+    for job in jobs:
+        company = str(job.get("company") or "").strip().lower() or "__unknown__"
+        count = company_counts.get(company, 0)
+        if count >= max_per_company:
+            continue
+        company_counts[company] = count + 1
+        capped.append(job)
+    return capped
+
+
+def _company_careers_hint_url(jobs: list[dict[str, Any]]) -> str | None:
+    for job in jobs:
+        raw_url = str(job.get("url") or "").strip()
+        if not raw_url:
+            continue
+        try:
+            parsed = urlparse(raw_url)
+        except ValueError:
+            continue
+        if not parsed.scheme or not parsed.netloc:
+            continue
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return None
+
+
+def _build_company_opportunity_note(
+    jobs: list[dict[str, Any]],
+    *,
+    threshold: int = COMPANY_OPPORTUNITY_NOTE_THRESHOLD,
+) -> str | None:
+    if threshold <= 1 or not jobs:
+        return None
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    display_names: dict[str, str] = {}
+    for job in jobs:
+        display = str(job.get("company") or "").strip()
+        if not display:
+            continue
+        key = display.lower()
+        grouped.setdefault(key, []).append(job)
+        display_names.setdefault(key, display)
+
+    heavy_hitters = [(key, items) for key, items in grouped.items() if len(items) > threshold]
+    if not heavy_hitters:
+        return None
+
+    heavy_hitters.sort(key=lambda item: len(item[1]), reverse=True)
+    lines: list[str] = [
+        "Note: Multiple openings were found at the same company. Consider checking the careers page / recruiter contact for faster follow-up."
+    ]
+    for key, company_jobs in heavy_hitters:
+        company_name = display_names.get(key, "Unknown company")
+        total = len(company_jobs)
+        link = _company_careers_hint_url(company_jobs)
+        if link:
+            lines.append(f"- {company_name}: {total} matching openings ({link})")
+        else:
+            lines.append(f"- {company_name}: {total} matching openings")
+    return "\n".join(lines)
+
+
+def _extract_urls_from_bullets(text: str) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line.startswith("- "):
+            continue
+        match = re.search(r"https?://\S+", line)
+        if not match:
+            continue
+        url = match.group(0).rstrip(").,]")
+        if url in seen:
+            continue
+        seen.add(url)
+        urls.append(url)
+    return urls
+
+
+def _match_emailed_jobs_from_output(
+    cleaned_output: str,
+    *,
+    candidate_jobs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    urls = _extract_urls_from_bullets(cleaned_output)
+    if not urls:
+        return []
+    by_url: dict[str, dict[str, Any]] = {}
+    for job in candidate_jobs:
+        url = str(job.get("url") or "").strip()
+        if url and url not in by_url:
+            by_url[url] = job
+    matched: list[dict[str, Any]] = []
+    for url in urls:
+        job = by_url.get(url)
+        if job is not None:
+            matched.append(job)
+    return matched
+
+
+def _carryover_jobs_from_sent_history(
+    jobs: list[dict[str, Any]],
+    *,
+    sent_job_keys: set[str],
+    exclude_job_keys: set[str] | None = None,
+    limit: int = MAX_CARRYOVER_EMAIL_JOBS,
+) -> list[dict[str, Any]]:
+    if not jobs or not sent_job_keys:
+        return []
+    excluded = exclude_job_keys or set()
+    out: list[dict[str, Any]] = []
+    for job in jobs:
+        key = stable_job_key(job)
+        if not key or key in excluded:
+            continue
+        if key in sent_job_keys:
+            out.append(job)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _format_job_bullet(job: dict[str, Any]) -> str | None:
+    title = str(job.get("position") or "").strip()
+    company = str(job.get("company") or "").strip()
+    url = str(job.get("url") or "").strip()
+    if not (title and company and url):
+        return None
+    return f"- {title} — {company} — {url}"
+
+
+def _build_carryover_section(carryover_jobs: list[dict[str, Any]]) -> str:
+    lines = ["Still open / previously shared:"]
+    for job in carryover_jobs:
+        bullet = _format_job_bullet(job)
+        if bullet:
+            lines.append(bullet)
+    return "\n".join(lines)
+
+
+def _dedupe_jobs_by_key(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for job in jobs:
+        key = stable_job_key(job)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(job)
+    return out
+
+
+def _set_run_metrics(
+    options: AgentOptions,
+    *,
+    fetched_jobs_count: int | None = None,
+    keyword_jobs_count: int | None = None,
+    emailed_jobs_count: int | None = None,
+) -> None:
+    store = options.metrics_store
+    if store is None or not hasattr(store, "set_metrics"):
+        return
+    store.set_metrics(
+        fetched_jobs_count=fetched_jobs_count,
+        keyword_jobs_count=keyword_jobs_count,
+        emailed_jobs_count=emailed_jobs_count,
+    )
+
+
 def run_agent(settings: Settings, options: AgentOptions) -> int:
     _require_env(settings, require_email=not options.dry_run)
     _validate_recipient_config(settings, options)
 
-    jobs = fetch_jobs_from_sources(settings, options.sources or ["remoteok"])
-    print(f"Fetched jobs from sources: {', '.join(options.sources or ['remoteok'])} | total: {len(jobs)}")
+    sources_label = ", ".join(options.sources or ["remoteok"])
+    if options.prefetched_jobs is not None:
+        jobs = options.prefetched_jobs
+        print(f"Using shared fetched jobs cache for sources: {sources_label} | total: {len(jobs)}")
+    else:
+        jobs = fetch_jobs_from_sources(settings, options.sources or ["remoteok"])
+        print(f"Fetched jobs from sources: {sources_label} | total: {len(jobs)}")
     keyword_jobs = filter_jobs_by_keyword(jobs, options.keyword)
     keyword_jobs = _rank_jobs_for_profile(keyword_jobs, options)
+    _set_run_metrics(
+        options,
+        fetched_jobs_count=len(jobs),
+        keyword_jobs_count=len(keyword_jobs),
+        emailed_jobs_count=0,
+    )
 
     if not keyword_jobs:
         print(f"No jobs found for keyword: {options.keyword}")
@@ -160,6 +546,12 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
         seen_jobs_file=options.seen_jobs_file,
         snapshot_store=options.snapshot_store,
     )
+    llm_candidates = candidate_jobs
+    sent_job_keys: set[str] = set()
+    if options.sent_jobs_store is not None and hasattr(options.sent_jobs_store, "load_sent_job_keys"):
+        sent_job_keys = set(options.sent_jobs_store.load_sent_job_keys(max_age_days=MAX_CARRYOVER_AGE_DAYS))
+        if sent_job_keys:
+            print(f"Loaded sent-job history for carryover window: {MAX_CARRYOVER_AGE_DAYS} days ({len(sent_job_keys)} keys)")
 
     if options.dedupe_enabled and store is not None:
         current_set = set(current_keys)
@@ -169,35 +561,100 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
             f"Keyword-matched jobs: {len(keyword_jobs)} | "
             f"added since last run: {added} | removed since last run: {removed}"
         )
+        llm_candidates = _new_jobs_only(candidate_jobs, seen_before)
 
-    jobs_for_llm = llm_payload(candidate_jobs, limit=options.llm_input_limit)
-    raw_output = filter_jobs_with_groq(
-        api_key=settings.groq_api_key,
-        api_url=settings.groq_api_url,
-        model=settings.groq_model,
-        jobs_for_llm=jobs_for_llm,
-        timeout_seconds=settings.groq_timeout_seconds,
-        max_bullets=options.max_bullets,
-        keyword=options.keyword,
-        remote_only=options.remote_only,
-        strict_senior_only=options.strict_senior_only,
-        experience_level=options.experience_level,
-        target_roles=options.target_roles,
-        tech_stack_tags=options.tech_stack_tags,
-        alert_frequency=options.alert_frequency,
-        primary_goal=options.primary_goal,
+    llm_candidate_keys = {stable_job_key(job) for job in llm_candidates if stable_job_key(job)}
+    carryover_jobs = _carryover_jobs_from_sent_history(
+        candidate_jobs,
+        sent_job_keys=sent_job_keys,
+        exclude_job_keys=llm_candidate_keys,
     )
-    cleaned_output = clean_llm_output(raw_output, max_bullets=options.max_bullets)
+    if carryover_jobs:
+        print(f"Carryover jobs (already sent, still matching): {len(carryover_jobs)}")
 
-    if cleaned_output == "NONE":
-        print("Model found no relevant jobs. Skipping email.")
+    cleaned_output = "NONE"
+    emailed_new_jobs: list[dict[str, Any]] = []
+    email_sections: list[str] = []
+    company_note_source_jobs: list[dict[str, Any]] = []
+
+    if llm_candidates:
+        effective_llm_limit = max(1, int(options.llm_input_limit))
+        if effective_llm_limit > MAX_LLM_INPUT_JOBS:
+            print(
+                f"Clamping llm_input_limit from {effective_llm_limit} to {MAX_LLM_INPUT_JOBS} "
+                "to avoid oversized LLM payloads."
+            )
+            effective_llm_limit = MAX_LLM_INPUT_JOBS
+
+        llm_candidates_capped = _cap_jobs_per_company_for_llm(
+            llm_candidates,
+            max_per_company=MAX_LLM_JOBS_PER_COMPANY,
+        )
+        if len(llm_candidates_capped) != len(llm_candidates):
+            print(
+                "Applied per-company LLM cap: "
+                f"{MAX_LLM_JOBS_PER_COMPANY} (reduced candidates from "
+                f"{len(llm_candidates)} to {len(llm_candidates_capped)})"
+            )
+
+        jobs_for_llm = llm_payload(llm_candidates_capped, limit=effective_llm_limit)
+        print(
+            f"Sending {len(jobs_for_llm)} job(s) to LLM "
+            f"(candidate pool: {len(llm_candidates_capped)}, limit: {effective_llm_limit})"
+        )
+        raw_output = filter_jobs_with_groq(
+            api_key=settings.groq_api_key,
+            api_url=settings.groq_api_url,
+            model=settings.groq_model,
+            jobs_for_llm=jobs_for_llm,
+            timeout_seconds=settings.groq_timeout_seconds,
+            max_bullets=options.max_bullets,
+            keyword=options.keyword,
+            remote_only=options.remote_only,
+            strict_senior_only=options.strict_senior_only,
+            experience_level=options.experience_level,
+            target_roles=options.target_roles,
+            tech_stack_tags=options.tech_stack_tags,
+            alert_frequency=options.alert_frequency,
+            primary_goal=options.primary_goal,
+        )
+        cleaned_output = clean_llm_output(raw_output, max_bullets=options.max_bullets)
+        if cleaned_output != "NONE":
+            email_sections.append("New matches:")
+            email_sections.append(cleaned_output)
+            emailed_new_jobs = _match_emailed_jobs_from_output(cleaned_output, candidate_jobs=llm_candidates)
+            company_note_source_jobs.extend(llm_candidates)
+        else:
+            print("Model found no relevant NEW jobs from LLM.")
+    else:
+        print("No newly added jobs for LLM in this run.")
+
+    if carryover_jobs:
+        email_sections.append(_build_carryover_section(carryover_jobs))
+        company_note_source_jobs.extend(carryover_jobs)
+
+    if not email_sections:
+        print("No new or carryover jobs to email. Skipping email.")
+        _set_run_metrics(options, emailed_jobs_count=0)
         if options.dedupe_enabled and store is not None:
             store.save(set(current_keys))
         return 0
 
+    email_body = "\n\n".join(section for section in email_sections if section.strip())
+    company_note = _build_company_opportunity_note(_dedupe_jobs_by_key(company_note_source_jobs))
+    if company_note:
+        email_body = f"{company_note}\n\n{email_body}"
+    email_subject = (
+        f"{options.keyword.title()} Job Digest (new + carryover)"
+        if emailed_new_jobs
+        else f"{options.keyword.title()} Job Digest (carryover updates)"
+    )
+
     if options.dry_run:
         print("Dry run enabled. Email body:")
-        print(cleaned_output)
+        print(email_body)
+        emailed_jobs = _dedupe_jobs_by_key([*emailed_new_jobs, *carryover_jobs])
+        _set_run_metrics(options, emailed_jobs_count=len(emailed_jobs))
     else:
         send_email(
             smtp_host=settings.smtp_host,
@@ -205,10 +662,14 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
             email_user=settings.email_user,
             email_pass=settings.email_pass,
             email_to=settings.email_to,
-            subject=f"New {options.keyword.title()} Remote Jobs Found",
-            body=cleaned_output,
+            subject=email_subject,
+            body=email_body,
         )
         print("Email sent successfully!")
+        emailed_jobs = _dedupe_jobs_by_key([*emailed_new_jobs, *carryover_jobs])
+        _set_run_metrics(options, emailed_jobs_count=len(emailed_jobs))
+        if options.sent_jobs_store is not None and emailed_jobs:
+            options.sent_jobs_store.record_sent_jobs(emailed_jobs)
 
     if options.dedupe_enabled and store is not None:
         store.save(set(current_keys))

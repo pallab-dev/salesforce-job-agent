@@ -103,44 +103,65 @@ def filter_jobs_with_groq(
     alert_frequency: str | None = None,
     primary_goal: str | None = None,
 ) -> str:
-    response = requests.post(
-        api_url,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": build_prompt(
-                        jobs_for_llm,
-                        max_bullets,
-                        keyword=keyword,
-                        remote_only=remote_only,
-                        strict_senior_only=strict_senior_only,
-                        experience_level=experience_level,
-                        target_roles=target_roles,
-                        tech_stack_tags=tech_stack_tags,
-                        alert_frequency=alert_frequency,
-                        primary_goal=primary_goal,
-                    ),
-                }
-            ],
-            "temperature": 0.1,
-        },
-        timeout=timeout_seconds,
-    )
-    response.raise_for_status()
+    attempt_jobs = list(jobs_for_llm)
+    last_http_error: requests.HTTPError | None = None
 
-    data: dict[str, Any] = response.json()
-    if "error" in data:
-        raise RuntimeError(f"Groq API error: {data['error']}")
-    if "choices" not in data:
-        raise RuntimeError(f"Unexpected Groq response: {data}")
+    while attempt_jobs:
+        try:
+            response = requests.post(
+                api_url,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": build_prompt(
+                                attempt_jobs,
+                                max_bullets,
+                                keyword=keyword,
+                                remote_only=remote_only,
+                                strict_senior_only=strict_senior_only,
+                                experience_level=experience_level,
+                                target_roles=target_roles,
+                                tech_stack_tags=tech_stack_tags,
+                                alert_frequency=alert_frequency,
+                                primary_goal=primary_goal,
+                            ),
+                        }
+                    ],
+                    "temperature": 0.1,
+                },
+                timeout=timeout_seconds,
+            )
+            response.raise_for_status()
+            data: dict[str, Any] = response.json()
+            if "error" in data:
+                raise RuntimeError(f"Groq API error: {data['error']}")
+            if "choices" not in data:
+                raise RuntimeError(f"Unexpected Groq response: {data}")
+            try:
+                return str(data["choices"][0]["message"]["content"])
+            except (KeyError, IndexError, TypeError) as exc:
+                raise RuntimeError(f"Unable to parse Groq response: {data}") from exc
+        except requests.HTTPError as exc:
+            last_http_error = exc
+            status_code = exc.response.status_code if exc.response is not None else None
+            if status_code == 413 and len(attempt_jobs) > 1:
+                next_len = max(1, len(attempt_jobs) // 2)
+                if next_len == len(attempt_jobs):
+                    next_len -= 1
+                print(
+                    f"Groq payload too large (413) with {len(attempt_jobs)} jobs. "
+                    f"Retrying with {next_len}."
+                )
+                attempt_jobs = attempt_jobs[:next_len]
+                continue
+            raise
 
-    try:
-        return str(data["choices"][0]["message"]["content"])
-    except (KeyError, IndexError, TypeError) as exc:
-        raise RuntimeError(f"Unable to parse Groq response: {data}") from exc
+    if last_http_error is not None:
+        raise last_http_error
+    raise RuntimeError("No jobs available to send to Groq")

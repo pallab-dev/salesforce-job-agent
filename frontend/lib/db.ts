@@ -249,6 +249,9 @@ export async function getUserPreferences(userId: number): Promise<UserPreference
 }
 
 export async function upsertUserPreferences(input: UserPreferencesInput): Promise<UserPreferences> {
+  const llmInputLimit =
+    input.llmInputLimit == null ? null : Math.max(1, Math.min(80, Math.trunc(input.llmInputLimit)));
+  const maxBullets = input.maxBullets == null ? null : Math.max(1, Math.min(20, Math.trunc(input.maxBullets)));
   const pool = getPool();
   const result = await pool.query(
     `
@@ -270,8 +273,8 @@ export async function upsertUserPreferences(input: UserPreferencesInput): Promis
     [
       input.userId,
       input.keyword?.trim() || null,
-      input.llmInputLimit ?? null,
-      input.maxBullets ?? null,
+      llmInputLimit,
+      maxBullets,
       input.remoteOnly ?? null,
       input.strictSeniorOnly ?? null,
       input.profileOverrides ? JSON.stringify(input.profileOverrides) : null

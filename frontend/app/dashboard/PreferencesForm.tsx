@@ -8,6 +8,7 @@ type PreferencesPayload = {
   max_bullets: number | "";
   remote_only: boolean;
   strict_senior_only: boolean;
+  negative_keywords: string[];
 };
 
 type PreferencesResponse =
@@ -29,7 +30,8 @@ export default function PreferencesForm({ initialPreferences }: { initialPrefere
       llm_input_limit: "",
       max_bullets: "",
       remote_only: false,
-      strict_senior_only: false
+      strict_senior_only: false,
+      negative_keywords: []
     }
   );
 
@@ -174,6 +176,24 @@ export default function PreferencesForm({ initialPreferences }: { initialPrefere
           <h3>Filters</h3>
           <p>Choose strictness for remote roles and seniority matching.</p>
         </div>
+        <label className="field">
+          Negative keywords (optional)
+          <input
+            className="input"
+            maxLength={300}
+            placeholder="qa, recruiter, support, sales"
+            value={form.negative_keywords.join(", ")}
+            onChange={(e) =>
+              setForm((prev) => ({
+                ...prev,
+                negative_keywords: e.target.value
+                  .split(",")
+                  .map((item) => item.trim())
+                  .filter(Boolean)
+              }))
+            }
+          />
+        </label>
         <div className="toggle-grid">
           <label className="toggle-card">
             <div>

@@ -4,6 +4,11 @@ import { getUserByUsername, getUserPreferences, upsertUserPreferences } from "..
 
 export const runtime = "nodejs";
 
+const LLM_INPUT_LIMIT_MIN = 1;
+const LLM_INPUT_LIMIT_MAX = 80;
+const MAX_BULLETS_MIN = 1;
+const MAX_BULLETS_MAX = 20;
+
 type PrefsPayload = {
   keyword?: unknown;
   llm_input_limit?: unknown;
@@ -13,6 +18,7 @@ type PrefsPayload = {
   experience_level?: unknown;
   target_roles?: unknown;
   tech_stack_tags?: unknown;
+  negative_keywords?: unknown;
   alert_frequency?: unknown;
   primary_goal?: unknown;
 };
@@ -25,13 +31,20 @@ function parseOptionalString(value: unknown): string | null {
   return trimmed || null;
 }
 
-function parseOptionalInt(value: unknown, field: string): number | null {
+function parseOptionalInt(
+  value: unknown,
+  field: string,
+  bounds?: { min: number; max: number }
+): number | null {
   if (value === null || value === undefined || value === "") {
     return null;
   }
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) {
     throw new Error(`${field} must be a positive integer`);
+  }
+  if (bounds && (n < bounds.min || n > bounds.max)) {
+    throw new Error(`${field} must be between ${bounds.min} and ${bounds.max}`);
   }
   return n;
 }
@@ -121,6 +134,9 @@ export async function GET() {
         tech_stack_tags: Array.isArray(profile.tech_stack_tags)
           ? profile.tech_stack_tags.map((v) => String(v))
           : [],
+        negative_keywords: Array.isArray(profile.negative_keywords)
+          ? profile.negative_keywords.map((v) => String(v))
+          : [],
         alert_frequency: typeof product.alert_frequency === "string" ? product.alert_frequency : "",
         primary_goal: typeof product.primary_goal === "string" ? product.primary_goal : ""
       }
@@ -160,6 +176,9 @@ export async function POST(request: Request) {
       ...(hasOwn(body, "target_roles") ? { target_roles: parseStringArray(body.target_roles, "target_roles") } : {}),
       ...(hasOwn(body, "tech_stack_tags")
         ? { tech_stack_tags: parseStringArray(body.tech_stack_tags, "tech_stack_tags") }
+        : {}),
+      ...(hasOwn(body, "negative_keywords")
+        ? { negative_keywords: parseStringArray(body.negative_keywords, "negative_keywords") }
         : {})
     };
     const nextProduct = {
@@ -173,8 +192,14 @@ export async function POST(request: Request) {
     const saved = await upsertUserPreferences({
       userId: user.id,
       keyword: parseOptionalString(body.keyword),
-      llmInputLimit: parseOptionalInt(body.llm_input_limit, "llm_input_limit"),
-      maxBullets: parseOptionalInt(body.max_bullets, "max_bullets"),
+      llmInputLimit: parseOptionalInt(body.llm_input_limit, "llm_input_limit", {
+        min: LLM_INPUT_LIMIT_MIN,
+        max: LLM_INPUT_LIMIT_MAX
+      }),
+      maxBullets: parseOptionalInt(body.max_bullets, "max_bullets", {
+        min: MAX_BULLETS_MIN,
+        max: MAX_BULLETS_MAX
+      }),
       remoteOnly: parseBoolean(body.remote_only, "remote_only"),
       strictSeniorOnly: parseBoolean(body.strict_senior_only, "strict_senior_only"),
       profileOverrides: {
@@ -204,6 +229,9 @@ export async function POST(request: Request) {
           : [],
         tech_stack_tags: Array.isArray(savedProfile.tech_stack_tags)
           ? savedProfile.tech_stack_tags.map((v) => String(v))
+          : [],
+        negative_keywords: Array.isArray(savedProfile.negative_keywords)
+          ? savedProfile.negative_keywords.map((v) => String(v))
           : [],
         alert_frequency: typeof savedProduct.alert_frequency === "string" ? savedProduct.alert_frequency : "",
         primary_goal: typeof savedProduct.primary_goal === "string" ? savedProduct.primary_goal : ""

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +12,10 @@ from psycopg.rows import dict_row
 
 
 SCHEMA_FILE = Path(__file__).with_name("postgres_schema.sql")
+LLM_INPUT_LIMIT_MIN = 1
+LLM_INPUT_LIMIT_MAX = 80
+MAX_BULLETS_MIN = 1
+MAX_BULLETS_MAX = 20
 
 
 @dataclass(frozen=True)
@@ -133,6 +137,18 @@ def set_user_preferences(
     strict_senior_only: bool | None = None,
     profile_overrides: dict[str, Any] | None = None,
 ) -> None:
+    llm_input_limit = _bounded_optional_int(
+        llm_input_limit,
+        field="llm_input_limit",
+        min_value=LLM_INPUT_LIMIT_MIN,
+        max_value=LLM_INPUT_LIMIT_MAX,
+    )
+    max_bullets = _bounded_optional_int(
+        max_bullets,
+        field="max_bullets",
+        min_value=MAX_BULLETS_MIN,
+        max_value=MAX_BULLETS_MAX,
+    )
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -220,6 +236,40 @@ def load_user_snapshot_keys(conn: psycopg.Connection, *, user_id: int) -> list[s
     return _parse_json_list(row.get("current_job_keys_jsonb")) or []
 
 
+def load_sent_job_keys(
+    conn: psycopg.Connection,
+    *,
+    user_id: int,
+    max_age_days: int | None = None,
+) -> list[str]:
+    cutoff: datetime | None = None
+    if max_age_days is not None:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, int(max_age_days)))
+
+    with conn.cursor() as cur:
+        if cutoff is None:
+            cur.execute(
+                """
+                SELECT job_key
+                FROM sent_job_records
+                WHERE user_id = %s
+                """,
+                (user_id,),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT job_key
+                FROM sent_job_records
+                WHERE user_id = %s
+                  AND COALESCE(last_seen_at, first_sent_at) >= %s
+                """,
+                (user_id, cutoff),
+            )
+        rows = cur.fetchall()
+    return [str(row["job_key"]) for row in rows if row.get("job_key")]
+
+
 def get_user_state(conn: psycopg.Connection, user_id: int) -> DbUserState | None:
     with conn.cursor() as cur:
         cur.execute(
@@ -304,6 +354,59 @@ def upsert_user_state(
     conn.commit()
 
 
+def upsert_sent_job_records(
+    conn: psycopg.Connection,
+    *,
+    user_id: int,
+    jobs: list[dict[str, Any]],
+) -> int:
+    rows: list[tuple[Any, ...]] = []
+    seen_keys: set[str] = set()
+    for job in jobs:
+        job_key = str(job.get("url") or "").strip()
+        if not job_key:
+            title = str(job.get("position") or "").strip()
+            company = str(job.get("company") or "").strip()
+            if title or company:
+                job_key = f"{company}::{title}"
+        if not job_key or job_key in seen_keys:
+            continue
+        seen_keys.add(job_key)
+        rows.append(
+            (
+                user_id,
+                job_key,
+                _none_or_str(job.get("source")),
+                _none_or_str(job.get("url")),
+                _none_or_str(job.get("position")),
+                _none_or_str(job.get("company")),
+            )
+        )
+
+    if not rows:
+        return 0
+
+    with conn.cursor() as cur:
+        cur.executemany(
+            """
+            INSERT INTO sent_job_records (
+              user_id, job_key, source, job_url, title, company, first_sent_at, last_seen_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, NOW(), NOW())
+            ON CONFLICT (user_id, job_key)
+            DO UPDATE SET
+              source = COALESCE(EXCLUDED.source, sent_job_records.source),
+              job_url = COALESCE(EXCLUDED.job_url, sent_job_records.job_url),
+              title = COALESCE(EXCLUDED.title, sent_job_records.title),
+              company = COALESCE(EXCLUDED.company, sent_job_records.company),
+              last_seen_at = NOW()
+            """,
+            rows,
+        )
+    conn.commit()
+    return len(rows)
+
+
 def insert_run_log(
     conn: psycopg.Connection,
     *,
@@ -354,6 +457,21 @@ def _none_or_str(value: str | None) -> str | None:
         return None
     s = str(value).strip()
     return s or None
+
+
+def _bounded_optional_int(
+    value: int | None,
+    *,
+    field: str,
+    min_value: int,
+    max_value: int,
+) -> int | None:
+    if value is None:
+        return None
+    n = int(value)
+    if n < min_value or n > max_value:
+        raise ValueError(f"{field} must be between {min_value} and {max_value}")
+    return n
 
 
 def _json_dumps_or_none(value: Any) -> str | None:

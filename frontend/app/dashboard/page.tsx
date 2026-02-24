@@ -123,6 +123,9 @@ export default async function DashboardPage({
       : {};
   const targetRoles = Array.isArray(profileMeta["target_roles"]) ? profileMeta["target_roles"].map(String) : [];
   const techTags = Array.isArray(profileMeta["tech_stack_tags"]) ? profileMeta["tech_stack_tags"].map(String) : [];
+  const negativeKeywords = Array.isArray(profileMeta["negative_keywords"])
+    ? profileMeta["negative_keywords"].map(String)
+    : [];
   const experienceLevel = typeof profileMeta["experience_level"] === "string" ? profileMeta["experience_level"] : "";
   const alertFrequency = typeof productMeta["alert_frequency"] === "string" ? productMeta["alert_frequency"] : "";
   const primaryGoal = typeof productMeta["primary_goal"] === "string" ? productMeta["primary_goal"] : "";
@@ -312,7 +315,8 @@ export default async function DashboardPage({
                 llm_input_limit: prefs?.llm_input_limit ?? "",
                 max_bullets: prefs?.max_bullets ?? "",
                 remote_only: prefs?.remote_only ?? false,
-                strict_senior_only: prefs?.strict_senior_only ?? false
+                strict_senior_only: prefs?.strict_senior_only ?? false,
+                negative_keywords: negativeKeywords
               }}
             />
           </section>

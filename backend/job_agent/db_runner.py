@@ -7,6 +7,7 @@ from typing import Any
 from job_agent.agent import AgentOptions, run_agent
 from job_agent.config import Settings
 from job_agent.profile_config import load_profile_config
+from job_agent.sources.registry import fetch_jobs_from_sources
 from job_agent.storage import postgres_db
 
 
@@ -25,6 +26,46 @@ class DbSnapshotStore:
         normalized = sorted({str(k) for k in keys if str(k).strip()})
         postgres_db.save_user_snapshot_keys(self.conn, user_id=self.user_id, keys=normalized)
         self.last_saved_keys = normalized
+
+
+class DbSentJobsStore:
+    def __init__(self, conn: Any, user_id: int):
+        self.conn = conn
+        self.user_id = user_id
+
+    def record_sent_jobs(self, jobs: list[dict[str, Any]]) -> None:
+        count = postgres_db.upsert_sent_job_records(self.conn, user_id=self.user_id, jobs=jobs)
+        if count:
+            print(f"Recorded {count} emailed job(s) in sent_job_records")
+
+    def load_sent_job_keys(self, *, max_age_days: int | None = None) -> set[str]:
+        return set(postgres_db.load_sent_job_keys(self.conn, user_id=self.user_id, max_age_days=max_age_days))
+
+
+class DbRunMetricsStore:
+    def __init__(self) -> None:
+        self.fetched_jobs_count: int | None = None
+        self.keyword_jobs_count: int | None = None
+        self.emailed_jobs_count: int | None = None
+
+    def set_metrics(
+        self,
+        *,
+        fetched_jobs_count: int | None = None,
+        keyword_jobs_count: int | None = None,
+        emailed_jobs_count: int | None = None,
+    ) -> None:
+        if fetched_jobs_count is not None:
+            self.fetched_jobs_count = fetched_jobs_count
+        if keyword_jobs_count is not None:
+            self.keyword_jobs_count = keyword_jobs_count
+        if emailed_jobs_count is not None:
+            self.emailed_jobs_count = emailed_jobs_count
+
+
+def _sources_cache_key(sources: list[str] | None) -> tuple[str, ...]:
+    normalized = sorted({str(item).strip().lower() for item in (sources or ["remoteok"]) if str(item).strip()})
+    return tuple(normalized or ["remoteok"])
 
 
 def _profile_signal_list(profile_overrides: dict[str, Any] | None, section: str, key: str) -> list[str]:
@@ -114,12 +155,15 @@ def run_all_users_from_db(
 
         print(f"Running agent for {len(users)} active DB user(s)")
         failures = 0
+        shared_jobs_cache: dict[tuple[str, ...], list[dict[str, Any]]] = {}
 
         for user in users:
             user_settings = replace(settings, email_to=user.email_to)
             profile_cfg = load_profile_config(user.username)
             prefs = postgres_db.get_user_preferences(conn, user.id)
             snapshot_store = DbSnapshotStore(conn, user.id)
+            sent_jobs_store = DbSentJobsStore(conn, user.id)
+            metrics_store = DbRunMetricsStore()
             alert_frequency = _profile_signal_str(
                 prefs.profile_overrides if prefs else None, "product", "alert_frequency"
             )
@@ -164,13 +208,19 @@ def run_all_users_from_db(
                     prefs.max_bullets if prefs and prefs.max_bullets is not None else profile_cfg.max_bullets
                 ),
                 dry_run=dry_run,
+                prefetched_jobs=None,
+                metrics_store=metrics_store,
                 dedupe_enabled=True,
                 seen_jobs_file=None,
                 snapshot_store=snapshot_store,
+                sent_jobs_store=sent_jobs_store,
                 experience_level=_profile_signal_str(prefs.profile_overrides if prefs else None, "profile", "experience_level"),
                 target_roles=_profile_signal_list(prefs.profile_overrides if prefs else None, "profile", "target_roles"),
                 tech_stack_tags=_profile_signal_list(
                     prefs.profile_overrides if prefs else None, "profile", "tech_stack_tags"
+                ),
+                negative_keywords=_profile_signal_list(
+                    prefs.profile_overrides if prefs else None, "profile", "negative_keywords"
                 ),
                 alert_frequency=alert_frequency,
                 primary_goal=_profile_signal_str(prefs.profile_overrides if prefs else None, "product", "primary_goal"),
@@ -178,7 +228,22 @@ def run_all_users_from_db(
 
             print(f"\n=== DB user: {user.username} ({user.email_to}) ===")
             try:
-                exit_code = run_agent(user_settings, options)
+                cache_key = _sources_cache_key(options.sources)
+                shared_jobs = shared_jobs_cache.get(cache_key)
+                if shared_jobs is None:
+                    shared_jobs = fetch_jobs_from_sources(user_settings, options.sources or list(cache_key))
+                    shared_jobs_cache[cache_key] = shared_jobs
+                    print(
+                        f"Loaded shared source cache for {', '.join(cache_key)} "
+                        f"({len(shared_jobs)} jobs)"
+                    )
+                else:
+                    print(
+                        f"Reusing shared source cache for {', '.join(cache_key)} "
+                        f"({len(shared_jobs)} jobs)"
+                    )
+                run_options = replace(options, prefetched_jobs=shared_jobs)
+                exit_code = run_agent(user_settings, run_options)
                 status = "success" if exit_code == 0 else "error"
                 if exit_code != 0:
                     failures += 1
@@ -187,7 +252,10 @@ def run_all_users_from_db(
                     user_id=user.id,
                     run_type=run_type,
                     status=status,
-                    sources_used=options.sources,
+                    fetched_jobs_count=metrics_store.fetched_jobs_count,
+                    keyword_jobs_count=metrics_store.keyword_jobs_count,
+                    emailed_jobs_count=metrics_store.emailed_jobs_count,
+                    sources_used=run_options.sources,
                 )
                 postgres_db.upsert_user_state(
                     conn,
@@ -195,7 +263,7 @@ def run_all_users_from_db(
                     current_job_keys=snapshot_store.last_saved_keys,
                     last_status=status,
                     last_error=None if status == "success" else "Agent returned non-zero exit code",
-                    mark_email_sent=False,
+                    mark_email_sent=(not dry_run and bool(metrics_store.emailed_jobs_count)),
                 )
             except Exception as exc:
                 failures += 1
@@ -239,6 +307,8 @@ def run_single_user_from_db(
         profile_cfg = load_profile_config(user.username)
         prefs = postgres_db.get_user_preferences(conn, user.id)
         snapshot_store = DbSnapshotStore(conn, user.id)
+        sent_jobs_store = DbSentJobsStore(conn, user.id)
+        metrics_store = DbRunMetricsStore()
 
         options = AgentOptions(
             profile=user.username,
@@ -255,13 +325,19 @@ def run_single_user_from_db(
             ),
             max_bullets=(prefs.max_bullets if prefs and prefs.max_bullets is not None else profile_cfg.max_bullets),
             dry_run=dry_run,
+            prefetched_jobs=None,
+            metrics_store=metrics_store,
             dedupe_enabled=True,
             seen_jobs_file=None,
             snapshot_store=snapshot_store,
+            sent_jobs_store=sent_jobs_store,
             experience_level=_profile_signal_str(prefs.profile_overrides if prefs else None, "profile", "experience_level"),
             target_roles=_profile_signal_list(prefs.profile_overrides if prefs else None, "profile", "target_roles"),
             tech_stack_tags=_profile_signal_list(
                 prefs.profile_overrides if prefs else None, "profile", "tech_stack_tags"
+            ),
+            negative_keywords=_profile_signal_list(
+                prefs.profile_overrides if prefs else None, "profile", "negative_keywords"
             ),
             alert_frequency=_profile_signal_str(prefs.profile_overrides if prefs else None, "product", "alert_frequency"),
             primary_goal=_profile_signal_str(prefs.profile_overrides if prefs else None, "product", "primary_goal"),
