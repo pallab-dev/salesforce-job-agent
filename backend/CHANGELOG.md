@@ -6,8 +6,8 @@ This project keeps a lightweight iteration log tied to Git commit IDs so collabo
 
 ### 2026-02-24 - Email digest dedupe and grouped rendering polish
 
-- Summary: Deduplicated repeated LLM bullets by URL, switched digest sections to grouped job rendering (company-level compression for larger clusters), and updated subject lines to count-based alert wording.
-- Why: Fix noisy/repeated emails and make the digest easier to scan without changing the underlying fetch/filter pipeline.
+- Summary: Deduplicated repeated LLM bullets by URL, switched digest sections to grouped job rendering (company-level compression for larger clusters), updated subject lines to count-based alert wording, and fixed DB run consistency (single-user DB runs now write the same logs/state as multi-user runs).
+- Why: Fix noisy/repeated emails, improve observability consistency, and avoid subject/metrics mismatches in fallback rendering cases.
 - Commit: pending (local changes not pushed yet)
 
 ### 2026-02-24 - Scheduler caching, carryover digests, and filtering hardening

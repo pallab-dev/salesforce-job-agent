@@ -346,6 +346,7 @@ How it works:
 - Scheduler fetches each unique source-set once per run and reuses the result for multiple users (shared in-memory cache)
 - `run_logs` now records fetched/keyword/emailed counts for each DB user run
 - `sent_job_records` is used to build carryover sections without re-sending old jobs to Groq
+- Single-user DB runs (`run --user ...`) and all-user DB runs now use the same state/logging behavior (`run_logs` + `user_state` updates)
 
 ### What You Need To Sign Up For (Free)
 

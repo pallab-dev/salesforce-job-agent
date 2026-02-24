@@ -242,7 +242,8 @@ def run_all_users_from_db(
                         f"Reusing shared source cache for {', '.join(cache_key)} "
                         f"({len(shared_jobs)} jobs)"
                     )
-                run_options = replace(options, prefetched_jobs=shared_jobs)
+                # Per-user isolation: avoid accidental cross-user list mutation if future code mutates jobs in-place.
+                run_options = replace(options, prefetched_jobs=list(shared_jobs))
                 exit_code = run_agent(user_settings, run_options)
                 status = "success" if exit_code == 0 else "error"
                 if exit_code != 0:
@@ -273,6 +274,9 @@ def run_all_users_from_db(
                     user_id=user.id,
                     run_type=run_type,
                     status="error",
+                    fetched_jobs_count=metrics_store.fetched_jobs_count,
+                    keyword_jobs_count=metrics_store.keyword_jobs_count,
+                    emailed_jobs_count=metrics_store.emailed_jobs_count,
                     sources_used=options.sources,
                     error_message=str(exc),
                 )
@@ -343,4 +347,48 @@ def run_single_user_from_db(
             primary_goal=_profile_signal_str(prefs.profile_overrides if prefs else None, "product", "primary_goal"),
         )
 
-        return run_agent(user_settings, options)
+        print(f"\n=== DB user: {user.username} ({user.email_to}) ===")
+        try:
+            exit_code = run_agent(user_settings, options)
+            status = "success" if exit_code == 0 else "error"
+            postgres_db.insert_run_log(
+                conn,
+                user_id=user.id,
+                run_type=run_type,
+                status=status,
+                fetched_jobs_count=metrics_store.fetched_jobs_count,
+                keyword_jobs_count=metrics_store.keyword_jobs_count,
+                emailed_jobs_count=metrics_store.emailed_jobs_count,
+                sources_used=options.sources,
+            )
+            postgres_db.upsert_user_state(
+                conn,
+                user_id=user.id,
+                current_job_keys=snapshot_store.last_saved_keys,
+                last_status=status,
+                last_error=None if status == "success" else "Agent returned non-zero exit code",
+                mark_email_sent=(not dry_run and bool(metrics_store.emailed_jobs_count)),
+            )
+            return exit_code
+        except Exception as exc:
+            print(f"DB user run failed ({user.username}): {exc}")
+            postgres_db.insert_run_log(
+                conn,
+                user_id=user.id,
+                run_type=run_type,
+                status="error",
+                fetched_jobs_count=metrics_store.fetched_jobs_count,
+                keyword_jobs_count=metrics_store.keyword_jobs_count,
+                emailed_jobs_count=metrics_store.emailed_jobs_count,
+                sources_used=options.sources,
+                error_message=str(exc),
+            )
+            postgres_db.upsert_user_state(
+                conn,
+                user_id=user.id,
+                current_job_keys=snapshot_store.last_saved_keys,
+                last_status="error",
+                last_error=str(exc),
+                mark_email_sent=False,
+            )
+            return 1

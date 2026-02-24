@@ -572,6 +572,14 @@ def _set_run_metrics(
     )
 
 
+def _bullet_line_count(text: str) -> int:
+    count = 0
+    for line in (text or "").splitlines():
+        if line.strip().startswith("- "):
+            count += 1
+    return count
+
+
 def _build_email_subject(
     *,
     keyword: str,
@@ -644,6 +652,7 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
 
     cleaned_output = "NONE"
     emailed_new_jobs: list[dict[str, Any]] = []
+    fallback_new_match_count = 0
     email_sections: list[str] = []
 
     if llm_candidates:
@@ -694,6 +703,7 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
                 email_sections.append(_build_grouped_job_section("New matches:", emailed_new_jobs))
             else:
                 # Fallback if the model output cannot be mapped back to known job URLs.
+                fallback_new_match_count = _bullet_line_count(cleaned_output)
                 email_sections.append("New matches:")
                 email_sections.append(cleaned_output)
         else:
@@ -712,9 +722,11 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
         return 0
 
     email_body = "\n\n".join(section for section in email_sections if section.strip())
+    rendered_new_count = len(emailed_new_jobs) if emailed_new_jobs else fallback_new_match_count
+    emailed_jobs_count_for_metrics = rendered_new_count + len(carryover_jobs)
     email_subject = _build_email_subject(
         keyword=options.keyword,
-        new_count=len(emailed_new_jobs),
+        new_count=rendered_new_count,
         carryover_count=len(carryover_jobs),
     )
 
@@ -722,7 +734,7 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
         print("Dry run enabled. Email body:")
         print(email_body)
         emailed_jobs = _dedupe_jobs_by_key([*emailed_new_jobs, *carryover_jobs])
-        _set_run_metrics(options, emailed_jobs_count=len(emailed_jobs))
+        _set_run_metrics(options, emailed_jobs_count=max(len(emailed_jobs), emailed_jobs_count_for_metrics))
     else:
         send_email(
             smtp_host=settings.smtp_host,
@@ -735,7 +747,7 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
         )
         print("Email sent successfully!")
         emailed_jobs = _dedupe_jobs_by_key([*emailed_new_jobs, *carryover_jobs])
-        _set_run_metrics(options, emailed_jobs_count=len(emailed_jobs))
+        _set_run_metrics(options, emailed_jobs_count=max(len(emailed_jobs), emailed_jobs_count_for_metrics))
         if options.sent_jobs_store is not None and emailed_jobs:
             options.sent_jobs_store.record_sent_jobs(emailed_jobs)
 
