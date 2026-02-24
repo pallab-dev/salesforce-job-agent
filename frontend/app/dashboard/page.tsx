@@ -1,9 +1,17 @@
 import Link from "next/link";
 import PreferencesForm from "./PreferencesForm";
+import DashboardSessionActions from "./DashboardSessionActions";
 import { getCurrentUserFromCookies, isAdminUser } from "../../lib/session";
 import { getUserPreferences } from "../../lib/db";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = searchParams ? await searchParams : {};
+  const tabParam = Array.isArray(params?.tab) ? params.tab[0] : params?.tab;
+  const activeTab = tabParam === "preferences" ? "preferences" : "overview";
   const currentUser = await getCurrentUserFromCookies();
   const username = currentUser?.username ?? "";
   const email = currentUser?.email_to ?? "";
@@ -102,8 +110,8 @@ export default async function DashboardPage() {
         ? Number(rawLastCompletedStep)
         : null;
   const resumeStepNumber =
-    lastCompletedStep !== null && Number.isInteger(lastCompletedStep)
-      ? Math.max(1, Math.min(4, lastCompletedStep + 2))
+    !onboardingCompletedAt && lastCompletedStep !== null && Number.isInteger(lastCompletedStep)
+      ? Math.max(1, Math.min(3, lastCompletedStep + 2))
       : null;
   const profileMeta =
     prefs?.profile_overrides && typeof prefs.profile_overrides["profile"] === "object"
@@ -151,17 +159,20 @@ export default async function DashboardPage() {
         </div>
 
         <nav className="dash-nav">
-          <a className="dash-nav-item active" href="#overview">Overview</a>
-          <a className="dash-nav-item" href="#preferences">Preferences</a>
+          <Link className={`dash-nav-item ${activeTab === "overview" ? "active" : ""}`} href="/dashboard?tab=overview">
+            Overview
+          </Link>
+          <Link
+            className={`dash-nav-item ${activeTab === "preferences" ? "active" : ""}`}
+            href="/dashboard?tab=preferences"
+          >
+            Preferences
+          </Link>
           {!setupComplete ? <a className="dash-nav-item" href="/onboarding">Continue Setup</a> : null}
           {canAccessAdmin ? <a className="dash-nav-item" href="/admin">Admin Console</a> : null}
         </nav>
 
-        <div className="dash-side-foot">
-          <Link className="btn btn-secondary btn-link" href="/auth">
-            Sign Out / Switch User
-          </Link>
-        </div>
+        <DashboardSessionActions initialIsActive={currentUser?.is_active ?? true} />
       </aside>
 
       <section className="dashboard-main-v2" aria-labelledby="dash-title">
@@ -181,6 +192,7 @@ export default async function DashboardPage() {
           </div>
         </header>
 
+        {activeTab === "overview" ? (
         <section id="overview" className="dashboard-panel">
           {username && email ? (
             <div className={`dashboard-status ${setupComplete ? "ready" : "needs-setup"}`}>
@@ -282,8 +294,9 @@ export default async function DashboardPage() {
             )}
           </div>
         </section>
+        ) : null}
 
-        {username && email ? (
+        {username && email && activeTab === "preferences" ? (
           <section id="preferences" className="dashboard-panel">
             <div className="panel-head">
               <div>
@@ -309,7 +322,7 @@ export default async function DashboardPage() {
           <span className="footnote">OAuth is parked for later and can be re-enabled when ready.</span>
           <div className="dashboard-link-row">
             {canAccessAdmin ? <Link href="/admin">Open admin console</Link> : null}
-            <Link href="/auth">Back to login</Link>
+            <Link href="/">Back to home</Link>
           </div>
         </footer>
       </section>

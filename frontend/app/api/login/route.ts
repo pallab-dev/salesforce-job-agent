@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserByEmail, getUserByUsername, upsertUser } from "../../../lib/db";
+import { getUserByEmail, getUserByUsername, setUserActiveStatus, upsertUser } from "../../../lib/db";
 
 export const runtime = "nodejs";
 
@@ -62,12 +62,11 @@ export async function POST(request: NextRequest) {
         );
       }
       if (!existingByUsername.is_active) {
-        return NextResponse.json(
-          { ok: false, error: "This user is deactivated. Contact an admin." },
-          { status: 403 }
-        );
+        await setUserActiveStatus(existingByUsername.username, true);
+        user = { ...existingByUsername, is_active: true };
+      } else {
+        user = existingByUsername;
       }
-      user = existingByUsername;
     } else {
       const [existingByUsername, existingByEmail] = await Promise.all([
         getUserByUsername(username),

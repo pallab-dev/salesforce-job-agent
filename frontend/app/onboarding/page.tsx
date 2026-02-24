@@ -35,9 +35,9 @@ export default async function OnboardingPage() {
         ? Number(onboardingMeta["last_completed_step"])
         : -1;
   const initialStep = completed
-    ? 3
+    ? 2
     : Number.isInteger(lastCompletedStep)
-      ? Math.max(0, Math.min(3, lastCompletedStep + 1))
+      ? Math.max(0, Math.min(2, lastCompletedStep + 1))
       : 0;
 
   return (

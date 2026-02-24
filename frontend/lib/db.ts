@@ -322,14 +322,14 @@ export async function markOnboardingCompleted(userId: number): Promise<void> {
         ...onboarding,
         completed: true,
         completed_at: new Date().toISOString(),
-        last_completed_step: 3
+        last_completed_step: 2
       }
     }
   });
 }
 
 export async function updateOnboardingProgress(userId: number, lastCompletedStep: number): Promise<void> {
-  const safeStep = Math.max(0, Math.min(3, Math.trunc(lastCompletedStep)));
+  const safeStep = Math.max(0, Math.min(2, Math.trunc(lastCompletedStep)));
   const existing = await getUserPreferences(userId);
   const root =
     existing?.profile_overrides && typeof existing.profile_overrides === "object"

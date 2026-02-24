@@ -30,7 +30,7 @@ type UserSummary = {
   email: string;
 };
 
-const steps = ["Account", "Preferences", "Workflow", "Finish"] as const;
+const steps = ["Account", "Preferences", "Finish"] as const;
 
 export default function OnboardingWizard({
   user,
@@ -419,53 +419,6 @@ export default function OnboardingWizard({
         ) : null}
 
         {stepIndex === 2 ? (
-          <div className="stack">
-            <h2 className="section-title no-top">How your workflow will run</h2>
-            <div className="workflow-lanes">
-              <div className="workflow-step">
-                <span className="step-index">1</span>
-                <div>
-                  <strong>Job sources are fetched</strong>
-                  <p>Configured sources (RemoteOK, Remotive, ATS boards) collect candidate jobs.</p>
-                </div>
-              </div>
-              <div className="workflow-step">
-                <span className="step-index">2</span>
-                <div>
-                  <strong>Your preferences are applied</strong>
-                  <p>
-                    Keyword: <code>{prefs.keyword || "developer"}</code>, remote-only:{" "}
-                    <code>{String(prefs.remote_only)}</code>, strict senior:{" "}
-                    <code>{String(prefs.strict_senior_only)}</code>.
-                  </p>
-                  <p>
-                    Experience: <code>{prefs.experience_level || "-"}</code>, alert frequency:{" "}
-                    <code>{prefs.alert_frequency || "-"}</code>
-                  </p>
-                </div>
-              </div>
-              <div className="workflow-step">
-                <span className="step-index">3</span>
-                <div>
-                  <strong>AI filtering runs</strong>
-                  <p>
-                    Up to <code>{prefs.llm_input_limit || "-"}</code> jobs are shortlisted and formatted into up to{" "}
-                    <code>{prefs.max_bullets || "-"}</code> results.
-                  </p>
-                </div>
-              </div>
-              <div className="workflow-step">
-                <span className="step-index">4</span>
-                <div>
-                  <strong>Dashboard and admin visibility</strong>
-                  <p>You can continue editing preferences later; admins can monitor operational state.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        {stepIndex === 3 ? (
           <div className="stack">
             <h2 className="section-title no-top">Setup complete</h2>
             <p className="subtitle compact">

@@ -24,9 +24,9 @@ export async function POST(request: NextRequest) {
 
     const rawStep = body.last_completed_step;
     const step = typeof rawStep === "number" ? rawStep : Number(rawStep);
-    if (!Number.isInteger(step) || step < 0 || step > 3) {
+    if (!Number.isInteger(step) || step < 0 || step > 2) {
       return NextResponse.json(
-        { ok: false, error: "last_completed_step must be an integer between 0 and 3" },
+        { ok: false, error: "last_completed_step must be an integer between 0 and 2" },
         { status: 400 }
       );
     }
