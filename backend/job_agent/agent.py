@@ -30,6 +30,11 @@ class AgentOptions:
     dedupe_enabled: bool = True
     seen_jobs_file: Path | None = None
     snapshot_store: Any | None = None
+    experience_level: str | None = None
+    target_roles: list[str] | None = None
+    tech_stack_tags: list[str] | None = None
+    alert_frequency: str | None = None
+    primary_goal: str | None = None
 
 
 def _require_env(settings: Settings, *, require_email: bool) -> None:
@@ -75,6 +80,67 @@ def _load_previous_snapshot(
     return jobs, store, seen_before, current_keys
 
 
+def _normalize_terms(items: list[str] | None) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in items or []:
+        s = str(item).strip().lower()
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        out.append(s)
+    return out
+
+
+def _score_job_for_profile(job: dict[str, Any], options: AgentOptions) -> int:
+    title = str(job.get("position") or "").lower()
+    desc = str(job.get("description") or "").lower()
+    tags = " ".join(str(t).lower() for t in (job.get("tags") or []) if t)
+    company = str(job.get("company") or "").lower()
+    hay = f"{title}\n{desc}\n{tags}\n{company}"
+
+    score = 0
+    for role in _normalize_terms(options.target_roles):
+        if role in title:
+            score += 4
+        elif role in hay:
+            score += 2
+
+    for tag in _normalize_terms(options.tech_stack_tags):
+        if tag in title:
+            score += 3
+        elif tag in hay:
+            score += 2
+
+    exp = (options.experience_level or "").strip().lower()
+    if exp in {"senior", "staff"}:
+        if any(term in title for term in ["senior", "staff", "principal", "lead", "architect"]):
+            score += 3
+    elif exp == "mid":
+        if any(term in title for term in ["engineer", "developer", "sde"]):
+            score += 2
+    elif exp == "entry":
+        if any(term in title for term in ["junior", "associate", "entry"]):
+            score += 2
+        if any(term in title for term in ["senior", "staff", "principal"]):
+            score -= 1
+
+    return score
+
+
+def _rank_jobs_for_profile(jobs: list[dict[str, Any]], options: AgentOptions) -> list[dict[str, Any]]:
+    if not jobs:
+        return jobs
+    if not any([options.target_roles, options.tech_stack_tags, options.experience_level]):
+        return jobs
+    ranked = sorted(
+        jobs,
+        key=lambda job: _score_job_for_profile(job, options),
+        reverse=True,
+    )
+    return ranked
+
+
 def run_agent(settings: Settings, options: AgentOptions) -> int:
     _require_env(settings, require_email=not options.dry_run)
     _validate_recipient_config(settings, options)
@@ -82,6 +148,7 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
     jobs = fetch_jobs_from_sources(settings, options.sources or ["remoteok"])
     print(f"Fetched jobs from sources: {', '.join(options.sources or ['remoteok'])} | total: {len(jobs)}")
     keyword_jobs = filter_jobs_by_keyword(jobs, options.keyword)
+    keyword_jobs = _rank_jobs_for_profile(keyword_jobs, options)
 
     if not keyword_jobs:
         print(f"No jobs found for keyword: {options.keyword}")
@@ -114,6 +181,11 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
         keyword=options.keyword,
         remote_only=options.remote_only,
         strict_senior_only=options.strict_senior_only,
+        experience_level=options.experience_level,
+        target_roles=options.target_roles,
+        tech_stack_tags=options.tech_stack_tags,
+        alert_frequency=options.alert_frequency,
+        primary_goal=options.primary_goal,
     )
     cleaned_output = clean_llm_output(raw_output, max_bullets=options.max_bullets)
 

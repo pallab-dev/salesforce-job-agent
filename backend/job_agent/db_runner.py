@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from job_agent.agent import AgentOptions, run_agent
@@ -26,6 +27,79 @@ class DbSnapshotStore:
         self.last_saved_keys = normalized
 
 
+def _profile_signal_list(profile_overrides: dict[str, Any] | None, section: str, key: str) -> list[str]:
+    root = profile_overrides or {}
+    block = root.get(section)
+    if not isinstance(block, dict):
+        return []
+    value = block.get(key)
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        s = str(item).strip()
+        if s:
+            out.append(s)
+    return out
+
+
+def _profile_signal_str(profile_overrides: dict[str, Any] | None, section: str, key: str) -> str | None:
+    root = profile_overrides or {}
+    block = root.get(section)
+    if not isinstance(block, dict):
+        return None
+    value = block.get(key)
+    if value is None:
+        return None
+    s = str(value).strip()
+    return s or None
+
+
+def _frequency_min_interval(alert_frequency: str | None) -> timedelta | None:
+    value = (alert_frequency or "").strip().lower()
+    if not value:
+        return None
+    if value == "weekly":
+        return timedelta(days=7)
+    if value == "daily":
+        return timedelta(days=1)
+    if value == "high_priority_only":
+        # "high_priority_only" affects filtering precision more than cadence for now.
+        # Keep running on each scheduled invocation.
+        return None
+    return None
+
+
+def _should_skip_scheduled_run(
+    *,
+    conn: Any,
+    user_id: int,
+    alert_frequency: str | None,
+    run_type: str,
+) -> tuple[bool, str | None]:
+    if run_type != "scheduled":
+        return False, None
+
+    min_interval = _frequency_min_interval(alert_frequency)
+    if min_interval is None:
+        return False, None
+
+    state = postgres_db.get_user_state(conn, user_id)
+    if not state or state.last_run_at is None:
+        return False, None
+
+    last_run_at = state.last_run_at
+    if last_run_at.tzinfo is None:
+        last_run_at = last_run_at.replace(tzinfo=timezone.utc)
+
+    now = datetime.now(timezone.utc)
+    next_due_at = last_run_at + min_interval
+    if now < next_due_at:
+        return True, f"next due at {next_due_at.isoformat()} (alert_frequency={alert_frequency})"
+
+    return False, None
+
+
 def run_all_users_from_db(
     *,
     settings: Settings,
@@ -46,6 +120,28 @@ def run_all_users_from_db(
             profile_cfg = load_profile_config(user.username)
             prefs = postgres_db.get_user_preferences(conn, user.id)
             snapshot_store = DbSnapshotStore(conn, user.id)
+            alert_frequency = _profile_signal_str(
+                prefs.profile_overrides if prefs else None, "product", "alert_frequency"
+            )
+
+            skip_run, skip_reason = _should_skip_scheduled_run(
+                conn=conn,
+                user_id=user.id,
+                alert_frequency=alert_frequency,
+                run_type=run_type,
+            )
+            if skip_run:
+                print(f"\n=== DB user: {user.username} ({user.email_to}) ===")
+                print(f"Skipping scheduled run: {skip_reason}")
+                postgres_db.insert_run_log(
+                    conn,
+                    user_id=user.id,
+                    run_type=run_type,
+                    status="skipped",
+                    sources_used=profile_cfg.sources,
+                    error_message=skip_reason,
+                )
+                continue
 
             options = AgentOptions(
                 profile=user.username,
@@ -71,6 +167,13 @@ def run_all_users_from_db(
                 dedupe_enabled=True,
                 seen_jobs_file=None,
                 snapshot_store=snapshot_store,
+                experience_level=_profile_signal_str(prefs.profile_overrides if prefs else None, "profile", "experience_level"),
+                target_roles=_profile_signal_list(prefs.profile_overrides if prefs else None, "profile", "target_roles"),
+                tech_stack_tags=_profile_signal_list(
+                    prefs.profile_overrides if prefs else None, "profile", "tech_stack_tags"
+                ),
+                alert_frequency=alert_frequency,
+                primary_goal=_profile_signal_str(prefs.profile_overrides if prefs else None, "product", "primary_goal"),
             )
 
             print(f"\n=== DB user: {user.username} ({user.email_to}) ===")
@@ -155,6 +258,13 @@ def run_single_user_from_db(
             dedupe_enabled=True,
             seen_jobs_file=None,
             snapshot_store=snapshot_store,
+            experience_level=_profile_signal_str(prefs.profile_overrides if prefs else None, "profile", "experience_level"),
+            target_roles=_profile_signal_list(prefs.profile_overrides if prefs else None, "profile", "target_roles"),
+            tech_stack_tags=_profile_signal_list(
+                prefs.profile_overrides if prefs else None, "profile", "tech_stack_tags"
+            ),
+            alert_frequency=_profile_signal_str(prefs.profile_overrides if prefs else None, "product", "alert_frequency"),
+            primary_goal=_profile_signal_str(prefs.profile_overrides if prefs else None, "product", "primary_goal"),
         )
 
         return run_agent(user_settings, options)

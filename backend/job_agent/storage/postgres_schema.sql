@@ -50,6 +50,19 @@ CREATE TABLE IF NOT EXISTS run_logs (
   finished_at TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+  id BIGSERIAL PRIMARY KEY,
+  admin_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  admin_username TEXT,
+  admin_email_to TEXT,
+  action TEXT NOT NULL,              -- activate_user / deactivate_user
+  target_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  target_username TEXT,
+  target_email_to TEXT,
+  metadata_jsonb JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS sent_job_records (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -68,6 +81,9 @@ CREATE INDEX IF NOT EXISTS idx_users_active
 
 CREATE INDEX IF NOT EXISTS idx_run_logs_user_started_at
   ON run_logs (user_id, started_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_created_at
+  ON admin_audit_logs (created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_sent_job_records_user_last_seen
   ON sent_job_records (user_id, last_seen_at DESC);

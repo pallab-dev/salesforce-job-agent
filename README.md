@@ -32,6 +32,14 @@ For admin access, add one of these to `frontend/.env.local`:
 
 Then open `http://localhost:3000/admin`.
 
+If you pull recent changes, rerun backend schema init to create new tables (for example `admin_audit_logs`):
+
+```bash
+cd backend
+export DATABASE_URL='postgresql://...'
+python3 -m job_agent.db_main db init
+```
+
 ## Docs
 
 - Backend docs and usage: `backend/README.md`

@@ -63,6 +63,7 @@ export type UserPreferences = {
   max_bullets: number | null;
   remote_only: boolean | null;
   strict_senior_only: boolean | null;
+  profile_overrides: Record<string, unknown> | null;
 };
 
 export type UserPreferencesInput = {
@@ -72,6 +73,7 @@ export type UserPreferencesInput = {
   maxBullets?: number | null;
   remoteOnly?: boolean | null;
   strictSeniorOnly?: boolean | null;
+  profileOverrides?: Record<string, unknown> | null;
 };
 
 export type AdminUserRow = {
@@ -116,6 +118,22 @@ export type AdminRunLogRow = {
   error_message: string | null;
   started_at: string | null;
   finished_at: string | null;
+};
+
+export type AdminAuditLogRow = {
+  id: number;
+  admin_username: string | null;
+  admin_email_to: string | null;
+  action: string;
+  target_username: string | null;
+  target_email_to: string | null;
+  metadata_jsonb: Record<string, unknown> | null;
+  created_at: string | null;
+};
+
+export type AdminAuditLogListResult = {
+  rows: AdminAuditLogRow[];
+  tableReady: boolean;
 };
 
 export async function upsertUser(input: LoginInput) {
@@ -198,7 +216,7 @@ export async function getUserPreferences(userId: number): Promise<UserPreference
   const pool = getPool();
   const result = await pool.query(
     `
-      SELECT user_id, keyword, llm_input_limit, max_bullets, remote_only, strict_senior_only
+      SELECT user_id, keyword, llm_input_limit, max_bullets, remote_only, strict_senior_only, profile_overrides_jsonb
       FROM user_preferences
       WHERE user_id = $1
       LIMIT 1
@@ -222,7 +240,11 @@ export async function getUserPreferences(userId: number): Promise<UserPreference
     strict_senior_only:
       row.strict_senior_only === null || row.strict_senior_only === undefined
         ? null
-        : Boolean(row.strict_senior_only)
+        : Boolean(row.strict_senior_only),
+    profile_overrides:
+      row.profile_overrides_jsonb && typeof row.profile_overrides_jsonb === "object"
+        ? (row.profile_overrides_jsonb as Record<string, unknown>)
+        : null
   };
 }
 
@@ -233,7 +255,7 @@ export async function upsertUserPreferences(input: UserPreferencesInput): Promis
       INSERT INTO user_preferences (
         user_id, keyword, llm_input_limit, max_bullets, remote_only, strict_senior_only, profile_overrides_jsonb, updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, NULL, NOW())
+      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, NOW())
       ON CONFLICT (user_id)
       DO UPDATE SET
         keyword = EXCLUDED.keyword,
@@ -241,8 +263,9 @@ export async function upsertUserPreferences(input: UserPreferencesInput): Promis
         max_bullets = EXCLUDED.max_bullets,
         remote_only = EXCLUDED.remote_only,
         strict_senior_only = EXCLUDED.strict_senior_only,
+        profile_overrides_jsonb = COALESCE(EXCLUDED.profile_overrides_jsonb, user_preferences.profile_overrides_jsonb),
         updated_at = NOW()
-      RETURNING user_id, keyword, llm_input_limit, max_bullets, remote_only, strict_senior_only
+      RETURNING user_id, keyword, llm_input_limit, max_bullets, remote_only, strict_senior_only, profile_overrides_jsonb
     `,
     [
       input.userId,
@@ -250,7 +273,8 @@ export async function upsertUserPreferences(input: UserPreferencesInput): Promis
       input.llmInputLimit ?? null,
       input.maxBullets ?? null,
       input.remoteOnly ?? null,
-      input.strictSeniorOnly ?? null
+      input.strictSeniorOnly ?? null,
+      input.profileOverrides ? JSON.stringify(input.profileOverrides) : null
     ]
   );
 
@@ -266,8 +290,71 @@ export async function upsertUserPreferences(input: UserPreferencesInput): Promis
     strict_senior_only:
       row.strict_senior_only === null || row.strict_senior_only === undefined
         ? null
-        : Boolean(row.strict_senior_only)
+        : Boolean(row.strict_senior_only),
+    profile_overrides:
+      row.profile_overrides_jsonb && typeof row.profile_overrides_jsonb === "object"
+        ? (row.profile_overrides_jsonb as Record<string, unknown>)
+        : null
   };
+}
+
+export async function markOnboardingCompleted(userId: number): Promise<void> {
+  const existing = await getUserPreferences(userId);
+  const root =
+    existing?.profile_overrides && typeof existing.profile_overrides === "object"
+      ? ({ ...existing.profile_overrides } as Record<string, unknown>)
+      : {};
+  const onboarding =
+    root["onboarding"] && typeof root["onboarding"] === "object"
+      ? ({ ...(root["onboarding"] as Record<string, unknown>) } as Record<string, unknown>)
+      : {};
+
+  await upsertUserPreferences({
+    userId,
+    keyword: existing?.keyword ?? null,
+    llmInputLimit: existing?.llm_input_limit ?? null,
+    maxBullets: existing?.max_bullets ?? null,
+    remoteOnly: existing?.remote_only ?? null,
+    strictSeniorOnly: existing?.strict_senior_only ?? null,
+    profileOverrides: {
+      ...root,
+      onboarding: {
+        ...onboarding,
+        completed: true,
+        completed_at: new Date().toISOString(),
+        last_completed_step: 3
+      }
+    }
+  });
+}
+
+export async function updateOnboardingProgress(userId: number, lastCompletedStep: number): Promise<void> {
+  const safeStep = Math.max(0, Math.min(3, Math.trunc(lastCompletedStep)));
+  const existing = await getUserPreferences(userId);
+  const root =
+    existing?.profile_overrides && typeof existing.profile_overrides === "object"
+      ? ({ ...existing.profile_overrides } as Record<string, unknown>)
+      : {};
+  const onboarding =
+    root["onboarding"] && typeof root["onboarding"] === "object"
+      ? ({ ...(root["onboarding"] as Record<string, unknown>) } as Record<string, unknown>)
+      : {};
+
+  await upsertUserPreferences({
+    userId,
+    keyword: existing?.keyword ?? null,
+    llmInputLimit: existing?.llm_input_limit ?? null,
+    maxBullets: existing?.max_bullets ?? null,
+    remoteOnly: existing?.remote_only ?? null,
+    strictSeniorOnly: existing?.strict_senior_only ?? null,
+    profileOverrides: {
+      ...root,
+      onboarding: {
+        ...onboarding,
+        last_completed_step: safeStep
+      }
+    }
+  });
 }
 
 export async function listAdminUsers(): Promise<AdminUserRow[]> {
@@ -361,6 +448,86 @@ export async function listAdminRunLogs(limit = 100): Promise<AdminRunLogRow[]> {
     started_at: row.started_at ? String(row.started_at) : null,
     finished_at: row.finished_at ? String(row.finished_at) : null
   }));
+}
+
+export async function listAdminAuditLogs(limit = 100): Promise<AdminAuditLogListResult> {
+  const pool = getPool();
+  try {
+    const result = await pool.query(
+      `
+        SELECT id, admin_username, admin_email_to, action, target_username, target_email_to, metadata_jsonb, created_at
+        FROM admin_audit_logs
+        ORDER BY created_at DESC
+        LIMIT $1
+      `,
+      [limit]
+    );
+    return {
+      tableReady: true,
+      rows: result.rows.map((row) => ({
+        id: Number(row.id),
+        admin_username: row.admin_username ? String(row.admin_username) : null,
+        admin_email_to: row.admin_email_to ? String(row.admin_email_to) : null,
+        action: String(row.action),
+        target_username: row.target_username ? String(row.target_username) : null,
+        target_email_to: row.target_email_to ? String(row.target_email_to) : null,
+        metadata_jsonb:
+          row.metadata_jsonb && typeof row.metadata_jsonb === "object"
+            ? (row.metadata_jsonb as Record<string, unknown>)
+            : null,
+        created_at: row.created_at ? String(row.created_at) : null
+      }))
+    };
+  } catch (error) {
+    // Allow admin page to load before schema migration is applied.
+    const code = typeof error === "object" && error && "code" in error ? String((error as { code: unknown }).code) : "";
+    if (code === "42P01") {
+      return { tableReady: false, rows: [] };
+    }
+    throw error;
+  }
+}
+
+export async function insertAdminAuditLog(input: {
+  adminUserId: number | null;
+  adminUsername: string | null;
+  adminEmailTo: string | null;
+  action: string;
+  targetUserId: number | null;
+  targetUsername: string | null;
+  targetEmailTo: string | null;
+  metadata?: Record<string, unknown> | null;
+}): Promise<boolean> {
+  const pool = getPool();
+  try {
+    await pool.query(
+      `
+        INSERT INTO admin_audit_logs (
+          admin_user_id, admin_username, admin_email_to, action,
+          target_user_id, target_username, target_email_to, metadata_jsonb, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, NOW())
+      `,
+      [
+        input.adminUserId,
+        input.adminUsername,
+        input.adminEmailTo,
+        input.action,
+        input.targetUserId,
+        input.targetUsername,
+        input.targetEmailTo,
+        input.metadata ? JSON.stringify(input.metadata) : null
+      ]
+    );
+    return true;
+  } catch (error) {
+    const code = typeof error === "object" && error && "code" in error ? String((error as { code: unknown }).code) : "";
+    if (code === "42P01") {
+      // Schema not migrated yet. Don't block admin actions; just skip logging.
+      return false;
+    }
+    throw error;
+  }
 }
 
 export async function setUserActiveStatus(username: string, isActive: boolean): Promise<void> {

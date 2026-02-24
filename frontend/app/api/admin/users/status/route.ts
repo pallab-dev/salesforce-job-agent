@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { setUserActiveStatus } from "../../../../../lib/db";
+import { getUserByUsername, insertAdminAuditLog, setUserActiveStatus } from "../../../../../lib/db";
 import { getCurrentUserFromCookies, isAdminUser } from "../../../../../lib/session";
 
 export const runtime = "nodejs";
@@ -32,7 +32,24 @@ export async function POST(request: Request) {
       );
     }
 
+    const targetUser = await getUserByUsername(username);
+    if (!targetUser) {
+      return NextResponse.json({ ok: false, error: "Target user not found" }, { status: 404 });
+    }
+
     await setUserActiveStatus(username, isActive);
+    await insertAdminAuditLog({
+      adminUserId: user!.id,
+      adminUsername: user!.username,
+      adminEmailTo: user!.email_to,
+      action: isActive ? "activate_user" : "deactivate_user",
+      targetUserId: targetUser.id,
+      targetUsername: targetUser.username,
+      targetEmailTo: targetUser.email_to,
+      metadata: {
+        new_is_active: isActive
+      }
+    });
     return NextResponse.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update user status";

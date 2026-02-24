@@ -46,6 +46,17 @@ type AdminOverview = {
       started_at: string | null;
       finished_at: string | null;
     }>;
+    adminAuditLogsEnabled: boolean;
+    adminAuditLogs: Array<{
+      id: number;
+      admin_username: string | null;
+      admin_email_to: string | null;
+      action: string;
+      target_username: string | null;
+      target_email_to: string | null;
+      metadata_jsonb: Record<string, unknown> | null;
+      created_at: string | null;
+    }>;
   };
 };
 
@@ -127,6 +138,12 @@ export default function AdminPanel() {
         Admin: <strong>{data.admin.username}</strong> ({data.admin.email_to})
       </div>
       {error ? <div className="banner err">{error}</div> : null}
+      {!data.data.adminAuditLogsEnabled ? (
+        <div className="banner err">
+          Admin audit logging table is not initialized yet. Run <code>cd backend && python3 -m job_agent.db_main db init</code>{" "}
+          to enable audit logs.
+        </div>
+      ) : null}
 
       <div className="toolbar-row">
         <button className="btn" type="button" onClick={() => loadOverview(false)} disabled={refreshing}>
@@ -194,6 +211,20 @@ export default function AdminPanel() {
           fmt(r.emailed_jobs_count),
           fmt(r.started_at),
           fmt(r.error_message)
+        ])}
+      />
+
+      <h2 className="section-title">Admin Audit Logs</h2>
+      <AdminTable
+        headers={["ID", "Admin", "Action", "Target User", "Target Email", "At", "Details"]}
+        rows={data.data.adminAuditLogs.map((log) => [
+          log.id,
+          `${fmt(log.admin_username)} (${fmt(log.admin_email_to)})`,
+          log.action,
+          fmt(log.target_username),
+          fmt(log.target_email_to),
+          fmt(log.created_at),
+          log.metadata_jsonb ? JSON.stringify(log.metadata_jsonb) : "-"
         ])}
       />
     </div>

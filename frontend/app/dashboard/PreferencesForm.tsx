@@ -18,20 +18,27 @@ type PreferencesResponse =
     }
   | { ok: false; error: string };
 
-export default function PreferencesForm() {
+export default function PreferencesForm({ initialPreferences }: { initialPreferences?: PreferencesPayload }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [form, setForm] = useState<PreferencesPayload>({
-    keyword: "",
-    llm_input_limit: "",
-    max_bullets: "",
-    remote_only: false,
-    strict_senior_only: false
-  });
+  const [form, setForm] = useState<PreferencesPayload>(
+    initialPreferences ?? {
+      keyword: "",
+      llm_input_limit: "",
+      max_bullets: "",
+      remote_only: false,
+      strict_senior_only: false
+    }
+  );
 
   useEffect(() => {
+    if (initialPreferences) {
+      setLoading(false);
+      return;
+    }
+
     let active = true;
 
     async function loadPrefs() {
@@ -63,7 +70,7 @@ export default function PreferencesForm() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [initialPreferences]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -97,80 +104,109 @@ export default function PreferencesForm() {
   }
 
   return (
-    <form className="stack" onSubmit={onSubmit}>
+    <form className="prefs-form" onSubmit={onSubmit}>
       {success ? <div className="banner ok">{success}</div> : null}
       {error ? <div className="banner err">{error}</div> : null}
 
-      <label className="field">
-        Keyword
-        <input
-          className="input"
-          maxLength={120}
-          placeholder="developer"
-          value={form.keyword}
-          onChange={(e) => setForm((prev) => ({ ...prev, keyword: e.target.value }))}
-        />
-      </label>
-
-      <div className="grid-two">
+      <section className="prefs-section-card">
+        <div className="prefs-section-head">
+          <h3>Search Focus</h3>
+          <p>Define the primary keyword used for filtering jobs before AI ranking.</p>
+        </div>
         <label className="field">
-          LLM Input Limit
+          Keyword
           <input
             className="input"
-            type="number"
-            min={1}
-            step={1}
-            placeholder="15"
-            value={form.llm_input_limit}
-            onChange={(e) =>
-              setForm((prev) => ({
-                ...prev,
-                llm_input_limit: e.target.value === "" ? "" : Number(e.target.value)
-              }))
-            }
+            maxLength={120}
+            placeholder="developer"
+            value={form.keyword}
+            onChange={(e) => setForm((prev) => ({ ...prev, keyword: e.target.value }))}
           />
         </label>
+      </section>
 
-        <label className="field">
-          Max Bullets
-          <input
-            className="input"
-            type="number"
-            min={1}
-            step={1}
-            placeholder="8"
-            value={form.max_bullets}
-            onChange={(e) =>
-              setForm((prev) => ({
-                ...prev,
-                max_bullets: e.target.value === "" ? "" : Number(e.target.value)
-              }))
-            }
-          />
-        </label>
+      <section className="prefs-section-card">
+        <div className="prefs-section-head">
+          <h3>Limits</h3>
+          <p>Control how many jobs enter the AI filter and how many bullets appear in results.</p>
+        </div>
+        <div className="grid-two">
+          <label className="field">
+            LLM Input Limit
+            <input
+              className="input"
+              type="number"
+              min={1}
+              step={1}
+              placeholder="15"
+              value={form.llm_input_limit}
+              onChange={(e) =>
+                setForm((prev) => ({
+                  ...prev,
+                  llm_input_limit: e.target.value === "" ? "" : Number(e.target.value)
+                }))
+              }
+            />
+          </label>
+
+          <label className="field">
+            Max Bullets
+            <input
+              className="input"
+              type="number"
+              min={1}
+              step={1}
+              placeholder="8"
+              value={form.max_bullets}
+              onChange={(e) =>
+                setForm((prev) => ({
+                  ...prev,
+                  max_bullets: e.target.value === "" ? "" : Number(e.target.value)
+                }))
+              }
+            />
+          </label>
+        </div>
+      </section>
+
+      <section className="prefs-section-card">
+        <div className="prefs-section-head">
+          <h3>Filters</h3>
+          <p>Choose strictness for remote roles and seniority matching.</p>
+        </div>
+        <div className="toggle-grid">
+          <label className="toggle-card">
+            <div>
+              <strong>Remote only</strong>
+              <p>Prefer strictly remote roles in your filtered results.</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={form.remote_only}
+              onChange={(e) => setForm((prev) => ({ ...prev, remote_only: e.target.checked }))}
+            />
+          </label>
+
+          <label className="toggle-card">
+            <div>
+              <strong>Strict senior only</strong>
+              <p>Reduce junior or broad matches and focus on senior roles.</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={form.strict_senior_only}
+              onChange={(e) => setForm((prev) => ({ ...prev, strict_senior_only: e.target.checked }))}
+            />
+          </label>
+        </div>
+      </section>
+
+      <div className="prefs-actions">
+        <button className="btn" type="submit" disabled={saving}>
+          {saving ? "Saving..." : "Save Preferences"}
+        </button>
+        <span className="footnote">Changes are saved to PostgreSQL immediately when you click save.</span>
       </div>
-
-      <label className="check-row">
-        <input
-          type="checkbox"
-          checked={form.remote_only}
-          onChange={(e) => setForm((prev) => ({ ...prev, remote_only: e.target.checked }))}
-        />
-        <span>Remote only</span>
-      </label>
-
-      <label className="check-row">
-        <input
-          type="checkbox"
-          checked={form.strict_senior_only}
-          onChange={(e) => setForm((prev) => ({ ...prev, strict_senior_only: e.target.checked }))}
-        />
-        <span>Strict senior only</span>
-      </label>
-
-      <button className="btn" type="submit" disabled={saving}>
-        {saving ? "Saving..." : "Save Preferences"}
-      </button>
     </form>
   );
 }

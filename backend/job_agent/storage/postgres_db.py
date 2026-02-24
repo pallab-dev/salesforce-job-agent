@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,15 @@ class DbUserPreferences:
     remote_only: bool | None
     strict_senior_only: bool | None
     profile_overrides: dict[str, Any] | None
+
+
+@dataclass(frozen=True)
+class DbUserState:
+    user_id: int
+    last_run_at: datetime | None
+    last_email_sent_at: datetime | None
+    last_status: str | None
+    last_error: str | None
 
 
 def get_database_url() -> str:
@@ -208,6 +218,30 @@ def load_user_snapshot_keys(conn: psycopg.Connection, *, user_id: int) -> list[s
     if not row:
         return []
     return _parse_json_list(row.get("current_job_keys_jsonb")) or []
+
+
+def get_user_state(conn: psycopg.Connection, user_id: int) -> DbUserState | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT user_id, last_run_at, last_email_sent_at, last_status, last_error
+            FROM user_state
+            WHERE user_id = %s
+            """,
+            (user_id,),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return None
+
+    return DbUserState(
+        user_id=int(row["user_id"]),
+        last_run_at=row.get("last_run_at"),
+        last_email_sent_at=row.get("last_email_sent_at"),
+        last_status=_none_or_str(row.get("last_status")),
+        last_error=_none_or_str(row.get("last_error")),
+    )
 
 
 def save_user_snapshot_keys(conn: psycopg.Connection, *, user_id: int, keys: list[str]) -> None:

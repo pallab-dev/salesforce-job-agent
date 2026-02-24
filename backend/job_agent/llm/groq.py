@@ -12,6 +12,11 @@ def build_prompt(
     keyword: str,
     remote_only: bool,
     strict_senior_only: bool,
+    experience_level: str | None = None,
+    target_roles: list[str] | None = None,
+    tech_stack_tags: list[str] | None = None,
+    alert_frequency: str | None = None,
+    primary_goal: str | None = None,
 ) -> str:
     remote_line = "Only REMOTE roles." if remote_only else "Prefer remote roles, but include strong hybrid roles if clearly relevant."
     if strict_senior_only:
@@ -28,6 +33,34 @@ def build_prompt(
         )
         coverage_hint = "- Prefer returning as many relevant roles as possible up to the max bullets."
 
+    profile_lines: list[str] = []
+    if experience_level:
+        profile_lines.append(f"- Experience level: {experience_level}")
+    if target_roles:
+        profile_lines.append(f"- Target roles: {', '.join(target_roles[:8])}")
+    if tech_stack_tags:
+        profile_lines.append(f"- Tech stack signals: {', '.join(tech_stack_tags[:10])}")
+    if alert_frequency:
+        profile_lines.append(f"- Alert frequency preference: {alert_frequency}")
+    if primary_goal:
+        profile_lines.append(f"- Primary goal: {primary_goal}")
+
+    frequency_hint = ""
+    if (alert_frequency or "").strip().lower() == "high_priority_only":
+        frequency_hint = "- User wants fewer, higher-confidence matches."
+    elif (alert_frequency or "").strip().lower() == "weekly":
+        frequency_hint = "- User accepts broader coverage for weekly review."
+
+    goal_hint = ""
+    if (primary_goal or "").strip().lower() == "job_switch":
+        goal_hint = "- Prioritize directly applicable open roles."
+    elif (primary_goal or "").strip().lower() == "market_tracking":
+        goal_hint = "- Include strong market-signal roles even if slightly broader."
+    elif (primary_goal or "").strip().lower() == "interview_pipeline":
+        goal_hint = "- Prioritize roles with clear fit and likely interview relevance."
+
+    profile_block = "\n".join(profile_lines) if profile_lines else "- No extra profile signals provided."
+
     return f"""
 You are a job alert bot. Follow instructions EXACTLY.
 
@@ -35,6 +68,7 @@ User preference:
 - Keyword focus: {keyword}
 - {remote_line}
 {seniority_block}
+{profile_block}
 
 Output rules (MANDATORY):
 - Output ONLY bullet points.
@@ -42,6 +76,8 @@ Output rules (MANDATORY):
 - Max {max_bullets} bullets.
 - Prefer Engineer/Developer/SDE title variants when they match the keyword focus.
 {coverage_hint}
+{frequency_hint}
+{goal_hint}
 - NO code. NO explanations. NO markdown fences.
 - If none match, output exactly: NONE
 
@@ -61,6 +97,11 @@ def filter_jobs_with_groq(
     keyword: str,
     remote_only: bool,
     strict_senior_only: bool,
+    experience_level: str | None = None,
+    target_roles: list[str] | None = None,
+    tech_stack_tags: list[str] | None = None,
+    alert_frequency: str | None = None,
+    primary_goal: str | None = None,
 ) -> str:
     response = requests.post(
         api_url,
@@ -79,6 +120,11 @@ def filter_jobs_with_groq(
                         keyword=keyword,
                         remote_only=remote_only,
                         strict_senior_only=strict_senior_only,
+                        experience_level=experience_level,
+                        target_roles=target_roles,
+                        tech_stack_tags=tech_stack_tags,
+                        alert_frequency=alert_frequency,
+                        primary_goal=primary_goal,
                     ),
                 }
             ],

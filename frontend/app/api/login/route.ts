@@ -47,10 +47,8 @@ export async function POST(request: NextRequest) {
 
   try {
     let user;
-    const existingByUsername = await getUserByUsername(username);
-    const existingByEmail = await getUserByEmail(emailTo);
-
     if (mode === "signin") {
+      const existingByUsername = await getUserByUsername(username);
       if (!existingByUsername) {
         return NextResponse.json(
           { ok: false, error: "User not found. Please sign up first." },
@@ -71,6 +69,10 @@ export async function POST(request: NextRequest) {
       }
       user = existingByUsername;
     } else {
+      const [existingByUsername, existingByEmail] = await Promise.all([
+        getUserByUsername(username),
+        getUserByEmail(emailTo)
+      ]);
       if (existingByUsername) {
         if (existingByUsername.email_to.toLowerCase() === emailTo) {
           return NextResponse.json(
