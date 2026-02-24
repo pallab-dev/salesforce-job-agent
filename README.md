@@ -25,6 +25,13 @@ npm run dev
 
 Open `http://localhost:3000/`.
 
+For admin access, add one of these to `frontend/.env.local`:
+
+- `ADMIN_EMAIL_ALLOWLIST=admin1@example.com,admin2@example.com`
+- `ADMIN_USERNAME_ALLOWLIST=adminuser1,adminuser2`
+
+Then open `http://localhost:3000/admin`.
+
 ## Docs
 
 - Backend docs and usage: `backend/README.md`

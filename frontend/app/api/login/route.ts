@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { upsertUser } from "../../../lib/db";
+import { getUserByEmail, getUserByUsername, upsertUser } from "../../../lib/db";
 
 export const runtime = "nodejs";
 
 type LoginPayload = {
+  mode?: unknown;
   username?: unknown;
   email_to?: unknown;
   timezone?: unknown;
@@ -22,8 +23,13 @@ export async function POST(request: NextRequest) {
   }
 
   const username = asTrimmedString(body.username);
-  const emailTo = asTrimmedString(body.email_to);
+  const emailTo = asTrimmedString(body.email_to).toLowerCase();
   const timezone = asTrimmedString(body.timezone);
+  const mode = asTrimmedString(body.mode).toLowerCase();
+
+  if (mode !== "signin" && mode !== "signup") {
+    return NextResponse.json({ ok: false, error: "mode must be 'signin' or 'signup'" }, { status: 400 });
+  }
 
   if (!username || !emailTo) {
     return NextResponse.json(
@@ -35,16 +41,65 @@ export async function POST(request: NextRequest) {
   if (!emailTo.includes("@")) {
     return NextResponse.json({ ok: false, error: "Invalid email address" }, { status: 400 });
   }
+  if (!emailTo.endsWith("@gmail.com")) {
+    return NextResponse.json({ ok: false, error: "Please use a Gmail address for this prototype" }, { status: 400 });
+  }
 
   try {
-    const user = await upsertUser({
-      username,
-      emailTo,
-      timezone: timezone || null
-    });
+    let user;
+    const existingByUsername = await getUserByUsername(username);
+    const existingByEmail = await getUserByEmail(emailTo);
+
+    if (mode === "signin") {
+      if (!existingByUsername) {
+        return NextResponse.json(
+          { ok: false, error: "User not found. Please sign up first." },
+          { status: 404 }
+        );
+      }
+      if (existingByUsername.email_to.toLowerCase() !== emailTo) {
+        return NextResponse.json(
+          { ok: false, error: "Username and Gmail do not match our records." },
+          { status: 400 }
+        );
+      }
+      if (!existingByUsername.is_active) {
+        return NextResponse.json(
+          { ok: false, error: "This user is deactivated. Contact an admin." },
+          { status: 403 }
+        );
+      }
+      user = existingByUsername;
+    } else {
+      if (existingByUsername) {
+        if (existingByUsername.email_to.toLowerCase() === emailTo) {
+          return NextResponse.json(
+            { ok: false, error: "User already exists. Please sign in." },
+            { status: 409 }
+          );
+        }
+        return NextResponse.json(
+          { ok: false, error: "Username is already taken. Use a different username." },
+          { status: 409 }
+        );
+      }
+      if (existingByEmail) {
+        return NextResponse.json(
+          { ok: false, error: `This Gmail is already registered as '${existingByEmail.username}'. Please sign in.` },
+          { status: 409 }
+        );
+      }
+
+      user = await upsertUser({
+        username,
+        emailTo,
+        timezone: timezone || null
+      });
+    }
 
     const response = NextResponse.json({
       ok: true,
+      mode,
       user: {
         id: Number(user.id),
         username: String(user.username),

@@ -3,30 +3,46 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
+type AuthMode = "signin" | "signup";
 type LoginResponse =
-  | { ok: true; user: { id: number; username: string; email_to: string; timezone: string | null } }
+  | {
+      ok: true;
+      mode: AuthMode;
+      user: { id: number; username: string; email_to: string; timezone: string | null };
+    }
   | { ok: false; error: string };
 
 export default function HomePage() {
   const router = useRouter();
+  const [mode, setMode] = useState<AuthMode>("signin");
   const [username, setUsername] = useState("");
   const [emailTo, setEmailTo] = useState("");
   const [timezone, setTimezone] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
     setError("");
+    setInfo("");
+
+    const normalizedEmail = emailTo.trim().toLowerCase();
+    if (!normalizedEmail.endsWith("@gmail.com")) {
+      setLoading(false);
+      setError("Please use a Gmail address (ending with @gmail.com).");
+      return;
+    }
 
     try {
       const response = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          mode,
           username,
-          email_to: emailTo,
+          email_to: normalizedEmail,
           timezone
         })
       });
@@ -37,6 +53,7 @@ export default function HomePage() {
         return;
       }
 
+      setInfo(data.mode === "signup" ? "Sign up successful." : "Sign in successful.");
       router.push("/dashboard");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unexpected error");
@@ -49,13 +66,39 @@ export default function HomePage() {
     <main className="page-shell">
       <section className="card" aria-labelledby="login-title">
         <h1 id="login-title" className="title">
-          Job Agent Login
+          Job Agent Access
         </h1>
         <p className="subtitle">
-          Simple prototype login using <code>username</code> and <code>gmail</code>. This creates or updates your user
-          in PostgreSQL <code>users</code>.
+          Prototype auth with consistency checks. Choose <code>Sign In</code> for existing users or <code>Sign Up</code>{" "}
+          for new users.
         </p>
 
+        <div className="mode-switch" role="tablist" aria-label="Auth mode">
+          <button
+            type="button"
+            className={`mode-btn ${mode === "signin" ? "active" : ""}`}
+            aria-selected={mode === "signin"}
+            onClick={() => {
+              setMode("signin");
+              setError("");
+            }}
+          >
+            Sign In
+          </button>
+          <button
+            type="button"
+            className={`mode-btn ${mode === "signup" ? "active" : ""}`}
+            aria-selected={mode === "signup"}
+            onClick={() => {
+              setMode("signup");
+              setError("");
+            }}
+          >
+            Sign Up
+          </button>
+        </div>
+
+        {info ? <div className="banner ok">{info}</div> : null}
         {error ? <div className="banner err">{error}</div> : null}
 
         <form onSubmit={onSubmit} className="stack">
@@ -96,13 +139,14 @@ export default function HomePage() {
           </label>
 
           <button className="btn" type="submit" disabled={loading}>
-            {loading ? "Saving..." : "Login / Register"}
+            {loading ? "Please wait..." : mode === "signup" ? "Create Account" : "Sign In"}
           </button>
         </form>
 
         <p className="footnote">
-          OAuth is parked for later. This mode does not verify email ownership yet.
+          `Sign Up` rejects duplicate username/email records. `Sign In` requires an exact username + Gmail match.
         </p>
+        <p className="footnote">OAuth is parked for later. This mode still does not verify email ownership.</p>
       </section>
     </main>
   );

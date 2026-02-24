@@ -48,6 +48,10 @@ body {
   box-shadow: 0 16px 42px rgba(20, 16, 10, 0.08);
 }
 
+.card-wide {
+  width: min(1200px, 100%);
+}
+
 .title {
   margin: 0 0 6px;
   font-size: 1.9rem;
@@ -62,6 +66,29 @@ body {
 .stack {
   display: grid;
   gap: 12px;
+}
+
+.mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.mode-btn {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.mode-btn.active {
+  border-color: #9dcfbf;
+  background: #eef8f4;
+  color: #124f42;
 }
 
 .field {
@@ -121,6 +148,21 @@ body {
   font-size: 0.85rem;
 }
 
+.toolbar-row {
+  display: flex;
+  gap: 8px;
+}
+
+.btn.btn-secondary {
+  background: #dfe8e4;
+  color: #17332d;
+}
+
+.btn.btn-danger {
+  background: #b34138;
+  color: #fff;
+}
+
 .section-title {
   margin: 18px 0 6px;
   font-size: 1.15rem;
@@ -154,4 +196,44 @@ body {
   .grid-two {
     grid-template-columns: 1fr;
   }
+}
+
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.admin-table th,
+.admin-table td {
+  border-bottom: 1px solid #eee4d6;
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.admin-table th {
+  background: #f8f2e8;
+  color: var(--ink);
+  position: sticky;
+  top: 0;
+}
+
+.admin-table td {
+  white-space: normal;
+  max-width: 280px;
+  word-break: break-word;
+}
+
+.empty-cell {
+  color: var(--muted);
 }

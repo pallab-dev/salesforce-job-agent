@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import PreferencesForm from "./PreferencesForm";
+import { getCurrentUserFromCookies, isAdminUser } from "../../lib/session";
 
 export default async function DashboardPage() {
   const cookieStore = await cookies();
   const username = cookieStore.get("job_agent_username")?.value ?? "";
   const email = cookieStore.get("job_agent_email")?.value ?? "";
+  const currentUser = await getCurrentUserFromCookies();
+  const canAccessAdmin = isAdminUser(currentUser);
 
   return (
     <main className="page-shell">
@@ -52,6 +55,12 @@ export default async function DashboardPage() {
         <p className="footnote">
           OAuth is parked for later. We can re-enable Google login when you’re ready.
         </p>
+
+        {canAccessAdmin ? (
+          <p className="footnote">
+            <Link href="/admin">Open admin console</Link>
+          </p>
+        ) : null}
 
         <p className="footnote">
           <Link href="/">Back to login</Link>
