@@ -4,6 +4,12 @@ This project keeps a lightweight iteration log tied to Git commit IDs so collabo
 
 ## Iteration History
 
+### 2026-02-24 - Email digest dedupe and grouped rendering polish
+
+- Summary: Deduplicated repeated LLM bullets by URL, switched digest sections to grouped job rendering (company-level compression for larger clusters), and updated subject lines to count-based alert wording.
+- Why: Fix noisy/repeated emails and make the digest easier to scan without changing the underlying fetch/filter pipeline.
+- Commit: pending (local changes not pushed yet)
+
 ### 2026-02-24 - Scheduler caching, carryover digests, and filtering hardening
 
 - Summary: Added shared per-run source fetch caching, `new + carryover` digest behavior (LLM on new jobs only), sent-job persistence/TTL, Groq payload retry-downsizing, run metrics logging, and deterministic filtering upgrades including user `negative_keywords`.

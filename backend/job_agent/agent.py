@@ -440,9 +440,15 @@ def _match_emailed_jobs_from_output(
         if url and url not in by_url:
             by_url[url] = job
     matched: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
     for url in urls:
         job = by_url.get(url)
         if job is not None:
+            key = stable_job_key(job)
+            if key and key in seen_keys:
+                continue
+            if key:
+                seen_keys.add(key)
             matched.append(job)
     return matched
 
@@ -479,11 +485,61 @@ def _format_job_bullet(job: dict[str, Any]) -> str | None:
 
 
 def _build_carryover_section(carryover_jobs: list[dict[str, Any]]) -> str:
-    lines = ["Still open / previously shared:"]
-    for job in carryover_jobs:
-        bullet = _format_job_bullet(job)
-        if bullet:
-            lines.append(bullet)
+    return _build_grouped_job_section("Still open / previously shared:", carryover_jobs)
+
+
+def _build_grouped_job_section(
+    heading: str,
+    jobs: list[dict[str, Any]],
+    *,
+    group_threshold: int = COMPANY_OPPORTUNITY_NOTE_THRESHOLD,
+) -> str:
+    jobs = _dedupe_jobs_by_key(jobs)
+    if not jobs:
+        return heading
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    company_names: dict[str, str] = {}
+    company_order: list[str] = []
+    for job in jobs:
+        company_display = str(job.get("company") or "").strip() or "Unknown company"
+        key = company_display.lower()
+        if key not in grouped:
+            grouped[key] = []
+            company_names[key] = company_display
+            company_order.append(key)
+        grouped[key].append(job)
+
+    lines = [heading]
+    for company_key in company_order:
+        company_jobs = grouped[company_key]
+        if len(company_jobs) > group_threshold:
+            company_name = company_names.get(company_key, "Unknown company")
+            roles: list[str] = []
+            seen_titles: set[str] = set()
+            for job in company_jobs:
+                title = str(job.get("position") or "").strip()
+                if not title or title in seen_titles:
+                    continue
+                seen_titles.add(title)
+                roles.append(title)
+                if len(roles) >= 3:
+                    break
+            role_summary = ", ".join(roles) if roles else "Multiple roles"
+            remaining = max(0, len(company_jobs) - len(roles))
+            if remaining:
+                role_summary = f"{role_summary} + {remaining} more"
+            follow_up_link = _company_careers_hint_url(company_jobs) or str(company_jobs[0].get("url") or "").strip()
+            if follow_up_link:
+                lines.append(f"- {company_name} ({len(company_jobs)} openings) — {role_summary} — {follow_up_link}")
+            else:
+                lines.append(f"- {company_name} ({len(company_jobs)} openings) — {role_summary}")
+            continue
+
+        for job in company_jobs:
+            bullet = _format_job_bullet(job)
+            if bullet:
+                lines.append(bullet)
     return "\n".join(lines)
 
 
@@ -514,6 +570,20 @@ def _set_run_metrics(
         keyword_jobs_count=keyword_jobs_count,
         emailed_jobs_count=emailed_jobs_count,
     )
+
+
+def _build_email_subject(
+    *,
+    keyword: str,
+    new_count: int,
+    carryover_count: int,
+) -> str:
+    keyword_label = (keyword or "Job").strip().title()
+    if new_count > 0 and carryover_count > 0:
+        return f"{keyword_label} Jobs: {new_count} New + {carryover_count} Still Open"
+    if new_count > 0:
+        return f"{keyword_label} Jobs Alert: {new_count} New Match{'es' if new_count != 1 else ''}"
+    return f"{keyword_label} Jobs Update: {carryover_count} Still Open Match{'es' if carryover_count != 1 else ''}"
 
 
 def run_agent(settings: Settings, options: AgentOptions) -> int:
@@ -575,7 +645,6 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
     cleaned_output = "NONE"
     emailed_new_jobs: list[dict[str, Any]] = []
     email_sections: list[str] = []
-    company_note_source_jobs: list[dict[str, Any]] = []
 
     if llm_candidates:
         effective_llm_limit = max(1, int(options.llm_input_limit))
@@ -620,10 +689,13 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
         )
         cleaned_output = clean_llm_output(raw_output, max_bullets=options.max_bullets)
         if cleaned_output != "NONE":
-            email_sections.append("New matches:")
-            email_sections.append(cleaned_output)
             emailed_new_jobs = _match_emailed_jobs_from_output(cleaned_output, candidate_jobs=llm_candidates)
-            company_note_source_jobs.extend(llm_candidates)
+            if emailed_new_jobs:
+                email_sections.append(_build_grouped_job_section("New matches:", emailed_new_jobs))
+            else:
+                # Fallback if the model output cannot be mapped back to known job URLs.
+                email_sections.append("New matches:")
+                email_sections.append(cleaned_output)
         else:
             print("Model found no relevant NEW jobs from LLM.")
     else:
@@ -631,7 +703,6 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
 
     if carryover_jobs:
         email_sections.append(_build_carryover_section(carryover_jobs))
-        company_note_source_jobs.extend(carryover_jobs)
 
     if not email_sections:
         print("No new or carryover jobs to email. Skipping email.")
@@ -641,13 +712,10 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
         return 0
 
     email_body = "\n\n".join(section for section in email_sections if section.strip())
-    company_note = _build_company_opportunity_note(_dedupe_jobs_by_key(company_note_source_jobs))
-    if company_note:
-        email_body = f"{company_note}\n\n{email_body}"
-    email_subject = (
-        f"{options.keyword.title()} Job Digest (new + carryover)"
-        if emailed_new_jobs
-        else f"{options.keyword.title()} Job Digest (carryover updates)"
+    email_subject = _build_email_subject(
+        keyword=options.keyword,
+        new_count=len(emailed_new_jobs),
+        carryover_count=len(carryover_jobs),
     )
 
     if options.dry_run:

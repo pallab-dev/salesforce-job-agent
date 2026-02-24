@@ -42,6 +42,12 @@ The digest is `new + carryover`:
 
 - `New matches` are sent to Groq and included in the email if selected by the LLM.
 - `Still open / previously shared` carryover jobs are reused from sent history if they still appear in the current run (no LLM call).
+- Email sections are deduplicated by job URL/key before sending.
+- Companies with many jobs are grouped into a compact summary line in the email body (instead of repeating every job bullet).
+
+Subject line format:
+
+- count-based alert/update style (examples: `Developer Jobs: 3 New + 4 Still Open`, `Java Jobs Alert: 2 New Matches`)
 
 Current carryover policy (backend defaults):
 
@@ -464,6 +470,9 @@ Reference (Google Help):
   - only `new` jobs go to Groq
   - max `3` jobs/company are sent to Groq
   - oversized Groq requests are reduced and retried automatically
+- Email rendering controls:
+  - deduplicates repeated LLM bullets by URL (helps when the model repeats the same job)
+  - groups larger company clusters in the digest for better readability
 
 ## Notes for Contributors
 
