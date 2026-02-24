@@ -4,6 +4,12 @@ This project keeps a lightweight iteration log tied to Git commit IDs so collabo
 
 ## Iteration History
 
+### 2026-02-24 - Scheduler caching, carryover digests, and filtering hardening
+
+- Summary: Added shared per-run source fetch caching, `new + carryover` digest behavior (LLM on new jobs only), sent-job persistence/TTL, Groq payload retry-downsizing, run metrics logging, and deterministic filtering upgrades including user `negative_keywords`.
+- Why: Improve scalability and reliability for multi-user scheduling while reducing LLM payload size/cost and keeping the codebase extensible at an early stage.
+- Commit: `67e2780` - `Improve scheduler caching and job digest filtering`
+
 ### 2026-02-23 - PostgreSQL schema and DB layer skeleton (planned migration)
 
 - Summary: Added Postgres schema SQL and a Python DB access layer skeleton for users, preferences, runtime state, and run logs.

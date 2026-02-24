@@ -12,6 +12,15 @@ This app provides the user-facing UI for:
 
 It stores user and preference data in PostgreSQL (Supabase) through server-side Next.js API routes.
 
+Current preference controls exposed in the dashboard include:
+
+- keyword
+- LLM input limit
+- max bullets
+- remote-only toggle
+- strict senior-only toggle
+- `negative_keywords` (comma-separated, optional; used by backend deterministic filtering before LLM)
+
 ## Routes
 
 - `/`
@@ -81,3 +90,14 @@ Open `http://localhost:3000/`.
 
 Current auth is a prototype flow (`username + Gmail`) and does not verify Gmail ownership.
 Google OAuth / managed auth can be added later.
+
+## Preferences API Notes
+
+`/api/preferences` stores advanced user profile signals in `user_preferences.profile_overrides_jsonb`.
+
+Examples:
+
+- `target_roles`
+- `tech_stack_tags`
+- `negative_keywords`
+- onboarding/product preferences (`alert_frequency`, `primary_goal`, etc.)

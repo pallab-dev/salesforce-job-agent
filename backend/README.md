@@ -7,7 +7,7 @@ Monorepo note:
 
 Automated job alert agent that:
 
-- fetches remote jobs (currently `RemoteOK`)
+- fetches jobs from multiple sources (`RemoteOK`, `Remotive`, `Greenhouse`, `Lever`, `Workday`/company boards)
 - filters them with Groq (`llama-3.1-8b-instant`)
 - emails results through Gmail SMTP
 - runs on GitHub Actions every 8 hours
@@ -29,23 +29,29 @@ It can also run locally from the CLI for testing.
 
 Current flow:
 
-1. Fetch jobs from RemoteOK
-2. Filter titles by keyword (default: `developer`)
-3. Send a reduced job list to Groq for relevance filtering
-4. Clean the LLM output to strict bullet format
-5. Send email to the configured Gmail address
+1. Fetch jobs from enabled sources
+2. Filter by keyword and apply deterministic ranking/filtering
+3. Send only `new` jobs to Groq for AI relevance filtering
+4. Reuse previously sent jobs as carryover (no extra LLM call)
+5. Clean/assemble the digest and send email
+6. Persist snapshot state, sent-job history, and run metrics
 
 ## Current Email Behavior (Important)
 
-The agent now sends a snapshot of the current matching jobs (after AI filtering), not only newly discovered jobs.
+The digest is `new + carryover`:
 
-Example:
+- `New matches` are sent to Groq and included in the email if selected by the LLM.
+- `Still open / previously shared` carryover jobs are reused from sent history if they still appear in the current run (no LLM call).
 
-- Run 1: `job1`, `job2` -> email contains `job1`, `job2`
-- Run 2: `job3` appears -> email contains `job1`, `job2`, `job3`
-- Run 3: `job3` disappears -> email contains `job1`, `job2`
+Current carryover policy (backend defaults):
 
-The file `.job_agent/seen_jobs.json` stores the previous run snapshot so the agent can compare what was added/removed between runs.
+- max carryover jobs per email: `10`
+- carryover age window (TTL): `14` days
+
+State tracking:
+
+- `.job_agent/seen_jobs.json` (or DB `user_state.current_job_keys_jsonb`) is used for add/remove snapshot comparisons
+- DB `sent_job_records` stores jobs that were actually emailed
 
 ## Project Structure
 
@@ -331,6 +337,9 @@ How it works:
 - Users are stored in PostgreSQL (`users` table) with `username` + `email_to`
 - User-specific preferences (optional) are stored in `user_preferences` (keyword/limits/filters; sources stay in shared YAML config)
 - Shared defaults continue to come from `config/profiles/default.yml`
+- Scheduler fetches each unique source-set once per run and reuses the result for multiple users (shared in-memory cache)
+- `run_logs` now records fetched/keyword/emailed counts for each DB user run
+- `sent_job_records` is used to build carryover sections without re-sending old jobs to Groq
 
 ### What You Need To Sign Up For (Free)
 
@@ -376,6 +385,12 @@ python -m job_agent.db_main users add \
   --max-bullets 12
 ```
 
+Validation / safety notes:
+
+- `llm_input_limit` is validated to `1..80`
+- `max_bullets` is validated to `1..20`
+- runtime also clamps unsafe values before Groq calls
+
 List users:
 
 ```bash
@@ -394,6 +409,7 @@ Optional config-driven defaults:
 - Keep only `config/profiles/default.yml` for shared defaults
 - Add `config/profiles/<username>.yml` only if needed
 - Sources are intentionally config-driven now (not stored in DB)
+- Additional profile signals can be stored in `user_preferences.profile_overrides_jsonb` (for example `target_roles`, `tech_stack_tags`, `negative_keywords`)
 
 ### Manual Run for One DB User
 
@@ -433,8 +449,21 @@ Reference (Google Help):
 - Groq errors:
   - Check model name (`llama-3.1-8b-instant`)
   - Confirm API key is valid and active
+  - Groq `413 Payload Too Large` is automatically retried with a smaller LLM input batch
 - No email sent:
   - Groq may return `NONE` (no relevant jobs found)
+  - If there are no new jobs and no carryover jobs, the digest is skipped
+
+## Filtering & Optimization Notes
+
+- Deterministic pre-LLM filtering now:
+  - boosts title matches over description-only matches
+  - reduces obvious non-software title noise for software-focused searches
+  - supports user `negative_keywords` (dashboard/API preference)
+- LLM payload controls:
+  - only `new` jobs go to Groq
+  - max `3` jobs/company are sent to Groq
+  - oversized Groq requests are reduced and retried automatically
 
 ## Notes for Contributors
 
