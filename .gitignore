@@ -1,2 +1,5 @@
-.job_agent/
-__pycache__/
+backend/.job_agent/
+backend/__pycache__/
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local

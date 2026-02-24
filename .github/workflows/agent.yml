@@ -13,6 +13,9 @@ on:
 jobs:
   run-db-users:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
 
     steps:
       - name: Checkout repository
