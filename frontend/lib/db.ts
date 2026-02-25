@@ -136,6 +136,21 @@ export type AdminAuditLogListResult = {
   tableReady: boolean;
 };
 
+export type DashboardMarketOpportunitySnapshot = {
+  tableReady: boolean;
+  sent_jobs_30d: number;
+  unique_companies_30d: number;
+  top_countries: Array<{ label: string; count: number }>;
+  top_sources: Array<{ label: string; count: number }>;
+  remote_mix: { remote: number; hybrid: number; onsite: number; unknown: number };
+  runs_30d: {
+    total_runs: number;
+    success_runs: number;
+    avg_keyword_jobs_count: number;
+    avg_emailed_jobs_count: number;
+  };
+};
+
 export type ResumeAnalysisPersistenceInput = {
   userId: number;
   source: string;
@@ -383,6 +398,124 @@ export async function updateOnboardingProgress(userId: number, lastCompletedStep
       }
     }
   });
+}
+
+export async function getDashboardMarketOpportunitySnapshot(
+  userId: number
+): Promise<DashboardMarketOpportunitySnapshot> {
+  const pool = getPool();
+  try {
+    const [summaryResult, countriesResult, sourcesResult, runsResult] = await Promise.all([
+      pool.query(
+        `
+          SELECT
+            COUNT(*)::int AS sent_jobs_30d,
+            COUNT(DISTINCT COALESCE(NULLIF(company, ''), job_key))::int AS unique_companies_30d,
+            COUNT(*) FILTER (
+              WHERE COALESCE(normalized_location_jsonb->>'mode', 'unknown') = 'remote'
+            )::int AS remote_count,
+            COUNT(*) FILTER (
+              WHERE COALESCE(normalized_location_jsonb->>'mode', 'unknown') = 'hybrid'
+            )::int AS hybrid_count,
+            COUNT(*) FILTER (
+              WHERE COALESCE(normalized_location_jsonb->>'mode', 'unknown') = 'onsite'
+            )::int AS onsite_count,
+            COUNT(*) FILTER (
+              WHERE COALESCE(normalized_location_jsonb->>'mode', 'unknown') NOT IN ('remote', 'hybrid', 'onsite')
+            )::int AS unknown_count
+          FROM sent_job_records
+          WHERE user_id = $1
+            AND COALESCE(last_seen_at, first_sent_at) >= NOW() - INTERVAL '30 days'
+        `,
+        [userId]
+      ),
+      pool.query(
+        `
+          SELECT
+            COALESCE(NULLIF(normalized_location_jsonb->>'country', ''), 'Unknown') AS label,
+            COUNT(*)::int AS count
+          FROM sent_job_records
+          WHERE user_id = $1
+            AND COALESCE(last_seen_at, first_sent_at) >= NOW() - INTERVAL '30 days'
+          GROUP BY 1
+          ORDER BY COUNT(*) DESC, label ASC
+          LIMIT 5
+        `,
+        [userId]
+      ),
+      pool.query(
+        `
+          SELECT
+            COALESCE(NULLIF(source, ''), 'unknown') AS label,
+            COUNT(*)::int AS count
+          FROM sent_job_records
+          WHERE user_id = $1
+            AND COALESCE(last_seen_at, first_sent_at) >= NOW() - INTERVAL '30 days'
+          GROUP BY 1
+          ORDER BY COUNT(*) DESC, label ASC
+          LIMIT 5
+        `,
+        [userId]
+      ),
+      pool.query(
+        `
+          SELECT
+            COUNT(*)::int AS total_runs,
+            COUNT(*) FILTER (WHERE status = 'success')::int AS success_runs,
+            COALESCE(ROUND(AVG(NULLIF(keyword_jobs_count, 0))::numeric, 1), 0)::float AS avg_keyword_jobs_count,
+            COALESCE(ROUND(AVG(COALESCE(emailed_jobs_count, 0))::numeric, 1), 0)::float AS avg_emailed_jobs_count
+          FROM run_logs
+          WHERE user_id = $1
+            AND started_at >= NOW() - INTERVAL '30 days'
+        `,
+        [userId]
+      )
+    ]);
+
+    const summary = summaryResult.rows[0] ?? {};
+    const runs = runsResult.rows[0] ?? {};
+
+    return {
+      tableReady: true,
+      sent_jobs_30d: Number(summary.sent_jobs_30d ?? 0),
+      unique_companies_30d: Number(summary.unique_companies_30d ?? 0),
+      top_countries: countriesResult.rows.map((row) => ({
+        label: String(row.label),
+        count: Number(row.count)
+      })),
+      top_sources: sourcesResult.rows.map((row) => ({
+        label: String(row.label),
+        count: Number(row.count)
+      })),
+      remote_mix: {
+        remote: Number(summary.remote_count ?? 0),
+        hybrid: Number(summary.hybrid_count ?? 0),
+        onsite: Number(summary.onsite_count ?? 0),
+        unknown: Number(summary.unknown_count ?? 0)
+      },
+      runs_30d: {
+        total_runs: Number(runs.total_runs ?? 0),
+        success_runs: Number(runs.success_runs ?? 0),
+        avg_keyword_jobs_count: Number(runs.avg_keyword_jobs_count ?? 0),
+        avg_emailed_jobs_count: Number(runs.avg_emailed_jobs_count ?? 0)
+      }
+    };
+  } catch (error) {
+    const code = typeof error === "object" && error && "code" in error ? String((error as { code: unknown }).code) : "";
+    // 42P01: undefined_table, 42703: undefined_column (migration not applied yet)
+    if (code === "42P01" || code === "42703") {
+      return {
+        tableReady: false,
+        sent_jobs_30d: 0,
+        unique_companies_30d: 0,
+        top_countries: [],
+        top_sources: [],
+        remote_mix: { remote: 0, hybrid: 0, onsite: 0, unknown: 0 },
+        runs_30d: { total_runs: 0, success_runs: 0, avg_keyword_jobs_count: 0, avg_emailed_jobs_count: 0 }
+      };
+    }
+    throw error;
+  }
 }
 
 export async function listAdminUsers(): Promise<AdminUserRow[]> {

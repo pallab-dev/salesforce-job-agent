@@ -5,6 +5,12 @@ import sys
 
 from job_agent.config import load_settings
 from job_agent.db_runner import run_all_users_from_db, run_single_user_from_db
+from job_agent.source_onboarding import (
+    ValidationOptions,
+    format_validation_cache_report,
+    load_validation_cache_report,
+    validate_company_sources,
+)
 from job_agent.storage import postgres_db
 
 
@@ -49,6 +55,43 @@ def build_parser() -> argparse.ArgumentParser:
     run_group.add_argument("--user", default=None, help="Single DB username to run")
     run_parser.add_argument("--dry-run", action="store_true")
     run_parser.add_argument("--init-db", action="store_true", help="Initialize schema before running")
+    run_parser.add_argument(
+        "--validate-sources",
+        dest="validate_sources",
+        action="store_true",
+        help="Validate company source candidates before running (default for --all-users).",
+    )
+    run_parser.add_argument(
+        "--no-validate-sources",
+        dest="validate_sources",
+        action="store_false",
+        help="Skip source validation before running.",
+    )
+    run_parser.set_defaults(validate_sources=None)
+    run_parser.add_argument("--source-validate-all", action="store_true", help="Validate all company source entries, not just onboarding candidates.")
+    run_parser.add_argument("--source-validate-min-jobs", type=int, default=1, help="Minimum jobs required to auto-activate a candidate during pre-run validation.")
+    run_parser.add_argument(
+        "--source-validate-pause-after-failures",
+        type=int,
+        default=3,
+        help="Pause source after this many consecutive validation failures/no-job results.",
+    )
+    run_parser.add_argument(
+        "--source-validate-timeout-seconds",
+        type=int,
+        default=None,
+        help="Override timeout for pre-run source validation requests.",
+    )
+
+    sources_parser = subparsers.add_parser("sources", help="Company-source onboarding and validation")
+    sources_subparsers = sources_parser.add_subparsers(dest="sources_command", required=True)
+    validate_sources = sources_subparsers.add_parser("validate", help="Validate configured company sources and auto-update runtime state cache")
+    validate_sources.add_argument("--all", action="store_true", help="Validate all configured entries, not just onboarding_state=candidate")
+    validate_sources.add_argument("--min-jobs", type=int, default=1, help="Minimum jobs required to auto-activate a candidate")
+    validate_sources.add_argument("--pause-after-failures", type=int, default=3, help="Pause source after this many consecutive failures/no-job validations")
+    validate_sources.add_argument("--timeout-seconds", type=int, default=None, help="Override HTTP timeout for validation requests")
+    report_sources = sources_subparsers.add_parser("report", help="Print a readable source validation cache report")
+    report_sources.add_argument("--max-rows", type=int, default=10, help="Max companies to print per group")
     return parser
 
 
@@ -62,6 +105,8 @@ def main() -> int:
             return _handle_users(args)
         if args.command == "run":
             return _handle_run(args)
+        if args.command == "sources":
+            return _handle_sources(args)
         raise RuntimeError(f"Unknown command: {args.command}")
     except KeyboardInterrupt:
         print("Interrupted.", file=sys.stderr)
@@ -146,7 +191,36 @@ def _handle_run(args: argparse.Namespace) -> int:
 
     settings = load_settings()
     if args.all_users:
-        return run_all_users_from_db(settings=settings, dry_run=args.dry_run, run_type="scheduled")
+        should_validate_sources = bool(args.validate_sources) if args.validate_sources is not None else True
+        if should_validate_sources:
+            print("Running company source validation before scheduled run...")
+            result = validate_company_sources(
+                settings,
+                ValidationOptions(
+                    candidates_only=not bool(args.source_validate_all),
+                    min_jobs_for_activation=max(1, int(args.source_validate_min_jobs)),
+                    pause_after_failures=max(1, int(args.source_validate_pause_after_failures)),
+                    timeout_seconds_override=args.source_validate_timeout_seconds,
+                ),
+            )
+            summary = result.get("summary", {})
+            print(
+                "Source validation summary: "
+                "checked={checked} active={active} candidate={candidate} paused={paused} "
+                "errors={errors} no_jobs={no_jobs} with_india_jobs={with_india_jobs}".format(
+                    checked=summary.get("checked", 0),
+                    active=summary.get("active", 0),
+                    candidate=summary.get("candidate", 0),
+                    paused=summary.get("paused", 0),
+                    errors=summary.get("errors", 0),
+                    no_jobs=summary.get("no_jobs", 0),
+                    with_india_jobs=summary.get("with_india_jobs", 0),
+                )
+            )
+        exit_code = run_all_users_from_db(settings=settings, dry_run=args.dry_run, run_type="scheduled")
+        print()
+        print(format_validation_cache_report(load_validation_cache_report(), max_rows_per_group=8))
+        return exit_code
     if args.user:
         return run_single_user_from_db(
             settings=settings,
@@ -155,6 +229,40 @@ def _handle_run(args: argparse.Namespace) -> int:
             run_type="manual",
         )
     raise RuntimeError("Either --all-users or --user is required")
+
+
+def _handle_sources(args: argparse.Namespace) -> int:
+    if args.sources_command == "report":
+        print(format_validation_cache_report(load_validation_cache_report(), max_rows_per_group=max(1, int(args.max_rows))))
+        return 0
+    if args.sources_command != "validate":
+        raise RuntimeError(f"Unknown sources command: {args.sources_command}")
+    settings = load_settings()
+    result = validate_company_sources(
+        settings,
+        ValidationOptions(
+            candidates_only=not bool(args.all),
+            min_jobs_for_activation=max(1, int(args.min_jobs)),
+            pause_after_failures=max(1, int(args.pause_after_failures)),
+            timeout_seconds_override=args.timeout_seconds,
+        ),
+    )
+    summary = result.get("summary", {})
+    print("Source validation cache updated.")
+    print(
+        "checked={checked} active={active} candidate={candidate} paused={paused} "
+        "errors={errors} no_jobs={no_jobs} with_india_jobs={with_india_jobs}".format(
+            checked=summary.get("checked", 0),
+            active=summary.get("active", 0),
+            candidate=summary.get("candidate", 0),
+            paused=summary.get("paused", 0),
+            errors=summary.get("errors", 0),
+            no_jobs=summary.get("no_jobs", 0),
+            with_india_jobs=summary.get("with_india_jobs", 0),
+        )
+    )
+    print(format_validation_cache_report(load_validation_cache_report(), max_rows_per_group=8))
+    return 0
 
 if __name__ == "__main__":
     raise SystemExit(main())

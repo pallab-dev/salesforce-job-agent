@@ -71,10 +71,18 @@ CREATE TABLE IF NOT EXISTS sent_job_records (
   job_url TEXT,
   title TEXT,
   company TEXT,
+  location_text TEXT,
+  normalized_location_jsonb JSONB,
   first_sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_seen_at TIMESTAMPTZ,
   UNIQUE (user_id, job_key)
 );
+
+ALTER TABLE sent_job_records
+  ADD COLUMN IF NOT EXISTS location_text TEXT;
+
+ALTER TABLE sent_job_records
+  ADD COLUMN IF NOT EXISTS normalized_location_jsonb JSONB;
 
 CREATE INDEX IF NOT EXISTS idx_users_active
   ON users (is_active);

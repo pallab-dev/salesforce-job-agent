@@ -72,5 +72,109 @@ workday:
   # - company: SomeCompany
   #   platform: workday
   #   careers_url: https://somecompany.wd5.myworkdayjobs.com/...
-  #   api_url: https://somecompany.wd5.myworkdayjobs.com/wday/cxs/somecompany/site/jobs
+#   api_url: https://somecompany.wd5.myworkdayjobs.com/wday/cxs/somecompany/site/jobs
+#   active: true
+
+# Global ATS ecosystems (public endpoints vary by tenant; start with one verified company each).
+# Add entries as you discover public careers endpoints/API URLs.
+
+ashby: []
+  # Example (replace slug after verification): https://jobs.ashbyhq.com/<slug>
+  # - company: ExampleCo
+  #   slug: exampleco
   #   active: true
+
+smartrecruiters: []
+  # Uses company identifier slug in SmartRecruiters public API.
+  # - company: ExampleCo
+  #   slug: exampleco
+  #   active: true
+
+bamboohr: []
+  # Provide subdomain or a public careers host URL.
+  # - company: ExampleCo
+  #   subdomain: exampleco
+  #   active: true
+
+jobvite: []
+  # Provide a public Jobvite host or company slug.
+  # - company: ExampleCo
+  #   slug: exampleco
+  #   active: true
+
+icims: []
+  # iCIMS varies heavily; prefer explicit host/api_url per company.
+  # - company: ExampleCo
+  #   host: https://careers-example.icims.com/jobs
+  #   active: true
+
+personio: []
+  # Personio public careers often expose XML/JSON under <slug>.jobs.personio.com.
+  # - company: ExampleCo
+  #   slug: exampleco
+  #   active: true
+
+recruitee: []
+  # Recruitee public API commonly works at https://<slug>.recruitee.com/api/offers/
+  # - company: ExampleCo
+  #   slug: exampleco
+  #   active: true
+
+custom_careers:
+  # Reuse workday_custom.fetch_jobs for custom JSON/RSS/public endpoints without adding new code.
+  # - company: ExampleCo
+  #   platform: custom
+  #   json_url: https://example.com/careers/jobs.json
+  #   source_key: exampleco
+  #   active: true
+  # Auto-onboarding candidates (50 companies across service / product / startup).
+  # Runtime activation is driven by `.job_agent/source_validation_cache.json`.
+  - { company: TCS, careers_url: "https://www.tcs.com/careers", base_url: "https://www.tcs.com", source_key: tcs, onboarding_state: candidate, segment: service, active: true }
+  - { company: Infosys, careers_url: "https://www.infosys.com/careers.html", base_url: "https://www.infosys.com", source_key: infosys, onboarding_state: paused, segment: service, active: true }
+  - { company: Wipro, careers_url: "https://careers.wipro.com/", base_url: "https://careers.wipro.com", source_key: wipro, onboarding_state: candidate, segment: service, active: true }
+  - { company: HCLTech, careers_url: "https://www.hcltech.com/careers", base_url: "https://www.hcltech.com", source_key: hcltech, onboarding_state: candidate, segment: service, active: true }
+  - { company: "Tech Mahindra", careers_url: "https://careers.techmahindra.com/", base_url: "https://careers.techmahindra.com", source_key: techmahindra, onboarding_state: candidate, segment: service, active: true }
+  - { company: LTIMindtree, careers_url: "https://www.ltimindtree.com/careers/", base_url: "https://www.ltimindtree.com", source_key: ltimindtree, onboarding_state: candidate, segment: service, active: true }
+  - { company: Cognizant, careers_url: "https://careers.cognizant.com/global/en", base_url: "https://careers.cognizant.com", source_key: cognizant, onboarding_state: paused, segment: service, active: true }
+  - { company: Accenture, careers_url: "https://www.accenture.com/in-en/careers", base_url: "https://www.accenture.com", source_key: accenture, onboarding_state: candidate, segment: service, active: true }
+  - { company: Capgemini, careers_url: "https://www.capgemini.com/careers/", base_url: "https://www.capgemini.com", source_key: capgemini, onboarding_state: candidate, segment: service, active: true }
+  - { company: Deloitte, careers_url: "https://www2.deloitte.com/us/en/careers.html", base_url: "https://www2.deloitte.com", source_key: deloitte, onboarding_state: candidate, segment: service, active: true }
+  - { company: EY, careers_url: "https://www.ey.com/en_in/careers", base_url: "https://www.ey.com", source_key: ey, onboarding_state: candidate, segment: service, active: true }
+  - { company: PwC, careers_url: "https://www.pwc.in/careers.html", base_url: "https://www.pwc.in", source_key: pwc, onboarding_state: candidate, segment: service, active: true }
+  - { company: KPMG, careers_url: "https://kpmg.com/in/en/home/careers.html", base_url: "https://kpmg.com", source_key: kpmg, onboarding_state: candidate, segment: service, active: true }
+  - { company: Mphasis, careers_url: "https://www.mphasis.com/home/careers.html", base_url: "https://www.mphasis.com", source_key: mphasis, onboarding_state: candidate, segment: service, active: true }
+  - { company: Coforge, careers_url: "https://www.coforge.com/careers", base_url: "https://www.coforge.com", source_key: coforge, onboarding_state: candidate, segment: service, active: true }
+  - { company: Microsoft, careers_url: "https://jobs.careers.microsoft.com/global/en/search", base_url: "https://jobs.careers.microsoft.com", source_key: microsoft, onboarding_state: candidate, segment: product, active: true }
+  - { company: Google, careers_url: "https://www.google.com/about/careers/applications/jobs/results/", base_url: "https://www.google.com", source_key: google, onboarding_state: candidate, segment: product, active: true }
+  - { company: Amazon, careers_url: "https://www.amazon.jobs/", base_url: "https://www.amazon.jobs", source_key: amazon, onboarding_state: candidate, segment: product, active: true }
+  - { company: Meta, careers_url: "https://www.metacareers.com/jobs", base_url: "https://www.metacareers.com", source_key: meta, onboarding_state: paused, segment: product, active: true }
+  - { company: Apple, careers_url: "https://jobs.apple.com/en-in/search", base_url: "https://jobs.apple.com", source_key: apple, onboarding_state: candidate, segment: product, active: true }
+  - { company: Salesforce, careers_url: "https://careers.salesforce.com/en/jobs/", base_url: "https://careers.salesforce.com", source_key: salesforce-custom, onboarding_state: candidate, segment: product, active: true }
+  - { company: Adobe, careers_url: "https://careers.adobe.com/us/en/search-results", base_url: "https://careers.adobe.com", source_key: adobe, onboarding_state: candidate, segment: product, active: true }
+  - { company: Oracle, careers_url: "https://careers.oracle.com/jobs/", base_url: "https://careers.oracle.com", source_key: oracle, onboarding_state: candidate, segment: product, active: true }
+  - { company: SAP, careers_url: "https://jobs.sap.com/", base_url: "https://jobs.sap.com", source_key: sap, onboarding_state: candidate, segment: product, active: true }
+  - { company: ServiceNow, careers_url: "https://careers.servicenow.com/jobs.html", base_url: "https://careers.servicenow.com", source_key: servicenow, onboarding_state: paused, segment: product, active: true }
+  - { company: Atlassian, careers_url: "https://www.atlassian.com/company/careers/all-jobs", base_url: "https://www.atlassian.com", source_key: atlassian, onboarding_state: candidate, segment: product, active: true }
+  - { company: Intuit, careers_url: "https://jobs.intuit.com/", base_url: "https://jobs.intuit.com", source_key: intuit, onboarding_state: candidate, segment: product, active: true }
+  - { company: Uber, careers_url: "https://www.uber.com/global/en/careers/", base_url: "https://www.uber.com", source_key: uber, onboarding_state: candidate, segment: product, active: true }
+  - { company: Airbnb, careers_url: "https://careers.airbnb.com/positions/", base_url: "https://careers.airbnb.com", source_key: airbnb, onboarding_state: candidate, segment: product, active: true }
+  - { company: Stripe, careers_url: "https://stripe.com/jobs/search", base_url: "https://stripe.com", source_key: stripe, onboarding_state: candidate, segment: product, active: true }
+  - { company: Datadog, careers_url: "https://careers.datadoghq.com/", base_url: "https://careers.datadoghq.com", source_key: datadog, onboarding_state: candidate, segment: product, active: true }
+  - { company: Snowflake, careers_url: "https://careers.snowflake.com/us/en/search-results", base_url: "https://careers.snowflake.com", source_key: snowflake, onboarding_state: candidate, segment: product, active: true }
+  - { company: MongoDB, careers_url: "https://www.mongodb.com/company/careers", base_url: "https://www.mongodb.com", source_key: mongodb, onboarding_state: candidate, segment: product, active: true }
+  - { company: Cloudflare, careers_url: "https://www.cloudflare.com/careers/jobs/", base_url: "https://www.cloudflare.com", source_key: cloudflare, onboarding_state: candidate, segment: product, active: true }
+  - { company: HubSpot, careers_url: "https://www.hubspot.com/careers/jobs", base_url: "https://www.hubspot.com", source_key: hubspot, onboarding_state: candidate, segment: product, active: true }
+  - { company: Razorpay, careers_url: "https://razorpay.com/jobs/", base_url: "https://razorpay.com", source_key: razorpay, onboarding_state: candidate, segment: startup, active: true }
+  - { company: PhonePe, careers_url: "https://www.phonepe.com/careers/", base_url: "https://www.phonepe.com", source_key: phonepe, onboarding_state: candidate, segment: startup, active: true }
+  - { company: Flipkart, careers_url: "https://www.flipkartcareers.com/#!/joblist", base_url: "https://www.flipkartcareers.com", source_key: flipkart, onboarding_state: candidate, segment: startup, active: true }
+  - { company: Swiggy, careers_url: "https://careers.swiggy.com/", base_url: "https://careers.swiggy.com", source_key: swiggy, onboarding_state: candidate, segment: startup, active: true }
+  - { company: Zomato, careers_url: "https://www.zomato.com/careers", base_url: "https://www.zomato.com", source_key: zomato, onboarding_state: candidate, segment: startup, active: true }
+  - { company: Meesho, careers_url: "https://www.meesho.io/jobs", base_url: "https://www.meesho.io", source_key: meesho, onboarding_state: candidate, segment: startup, active: true }
+  - { company: CRED, careers_url: "https://careers.cred.club/", base_url: "https://careers.cred.club", source_key: cred, onboarding_state: candidate, segment: startup, active: true }
+  - { company: Groww, careers_url: "https://groww.in/careers", base_url: "https://groww.in", source_key: groww, onboarding_state: candidate, segment: startup, active: true }
+  - { company: Freshworks, careers_url: "https://www.freshworks.com/company/careers/", base_url: "https://www.freshworks.com", source_key: freshworks, onboarding_state: candidate, segment: startup, active: true }
+  - { company: Zoho, careers_url: "https://www.zoho.com/careers/", base_url: "https://www.zoho.com", source_key: zoho, onboarding_state: candidate, segment: startup, active: true }
+  - { company: BrowserStack, careers_url: "https://www.browserstack.com/careers", base_url: "https://www.browserstack.com", source_key: browserstack, onboarding_state: candidate, segment: startup, active: true }
+  - { company: InMobi, careers_url: "https://www.inmobi.com/company/careers", base_url: "https://www.inmobi.com", source_key: inmobi, onboarding_state: candidate, segment: startup, active: true }
+  - { company: Delhivery, careers_url: "https://www.delhivery.com/careers/", base_url: "https://www.delhivery.com", source_key: delhivery, onboarding_state: candidate, segment: startup, active: true }
+  - { company: "Pine Labs", careers_url: "https://www.pinelabs.com/careers", base_url: "https://www.pinelabs.com", source_key: pinelabs, onboarding_state: candidate, segment: startup, active: true }

@@ -2,7 +2,7 @@ import Link from "next/link";
 import PreferencesForm from "./PreferencesForm";
 import DashboardSessionActions from "./DashboardSessionActions";
 import { getCurrentUserFromCookies, isAdminUser } from "../../lib/session";
-import { getUserPreferences } from "../../lib/db";
+import { getDashboardMarketOpportunitySnapshot, getUserPreferences } from "../../lib/db";
 
 export default async function DashboardPage({
   searchParams
@@ -17,6 +17,7 @@ export default async function DashboardPage({
   const email = currentUser?.email_to ?? "";
   const canAccessAdmin = isAdminUser(currentUser);
   const prefs = currentUser ? await getUserPreferences(currentUser.id) : null;
+  const marketSnapshot = currentUser ? await getDashboardMarketOpportunitySnapshot(currentUser.id) : null;
   const setupComplete = Boolean(
     prefs &&
       (prefs.keyword?.trim() || "") &&
@@ -149,6 +150,51 @@ export default async function DashboardPage({
             href: "/onboarding"
           }
         : { label: "Review dashboard", href: "/dashboard#preferences" };
+  const topCountryLabel = marketSnapshot?.top_countries[0]?.label ?? "";
+  const remoteMixTotal =
+    (marketSnapshot?.remote_mix.remote ?? 0) +
+    (marketSnapshot?.remote_mix.hybrid ?? 0) +
+    (marketSnapshot?.remote_mix.onsite ?? 0) +
+    (marketSnapshot?.remote_mix.unknown ?? 0);
+  const remoteShare =
+    remoteMixTotal > 0 ? Math.round(((marketSnapshot?.remote_mix.remote ?? 0) / remoteMixTotal) * 100) : 0;
+  const runSuccessRate =
+    (marketSnapshot?.runs_30d.total_runs ?? 0) > 0
+      ? Math.round(((marketSnapshot?.runs_30d.success_runs ?? 0) / (marketSnapshot?.runs_30d.total_runs ?? 1)) * 100)
+      : 0;
+  const marketRecommendations: string[] = [];
+  if (marketSnapshot) {
+    if (remoteShare >= 60 && prefs?.remote_only === false) {
+      marketRecommendations.push(
+        `Your recent matches are ${remoteShare}% remote. Test enabling remote-only to increase signal quality for global searches.`
+      );
+    }
+    if (topCountryLabel && topCountryLabel !== "Unknown") {
+      marketRecommendations.push(
+        `Most recent delivered matches came from ${topCountryLabel}. Add this as a preferred market/location focus in your next dashboard filter iteration.`
+      );
+    }
+    if ((marketSnapshot.runs_30d.avg_keyword_jobs_count ?? 0) < 5 && targetRoles.length > 0) {
+      marketRecommendations.push(
+        `Keyword-matched volume is low. Broaden your keyword using one target role + 1-2 tech tags (for example: ${[
+          targetRoles[0],
+          ...techTags.slice(0, 2)
+        ]
+          .filter(Boolean)
+          .join(", ") || "backend engineer, python, aws"}).`
+      );
+    }
+    if (techTags.length < 3) {
+      marketRecommendations.push(
+        "Add more tech stack tags in onboarding/preferences to improve market-specific ranking and career guidance quality."
+      );
+    }
+    if ((marketSnapshot.sent_jobs_30d ?? 0) >= 20 && (marketSnapshot.unique_companies_30d ?? 0) < 8) {
+      marketRecommendations.push(
+        "You are seeing repeated opportunities from a small company set. Consider expanding target roles or disabling strict senior mode for one test run."
+      );
+    }
+  }
 
   return (
     <main className="dashboard-shell">
@@ -256,6 +302,104 @@ export default async function DashboardPage({
               <p className="summary-help">Used to improve future relevance and product tuning.</p>
             </div>
           </div>
+
+          {marketSnapshot ? (
+            <div className="completion-card">
+              <div className="completion-head">
+                <div>
+                  <span className="summary-label">Market Opportunity (Last 30 Days)</span>
+                  <strong className="summary-value">
+                    {marketSnapshot.sent_jobs_30d} sent jobs · {marketSnapshot.unique_companies_30d} companies
+                  </strong>
+                  <p className="summary-help">
+                    Global market snapshot from your delivered matches + run logs. Use this to tune location and role focus.
+                  </p>
+                </div>
+                <div className={`completion-badge ${runSuccessRate >= 80 ? "high" : runSuccessRate >= 50 ? "medium" : "low"}`}>
+                  {runSuccessRate}% run success
+                </div>
+              </div>
+
+              {!marketSnapshot.tableReady ? (
+                <p className="summary-help">
+                  Market insights will populate after DB migration adds normalized location fields to sent job records.
+                </p>
+              ) : (
+                <>
+                  <div className="dashboard-summary-grid">
+                    <div className="summary-card">
+                      <span className="summary-label">Remote Mix</span>
+                      <strong className="summary-value">
+                        {marketSnapshot.remote_mix.remote} remote · {marketSnapshot.remote_mix.hybrid} hybrid ·{" "}
+                        {marketSnapshot.remote_mix.onsite} onsite
+                      </strong>
+                      <p className="summary-help">
+                        Remote share: {remoteShare}% {prefs?.remote_only ? "(remote-only enabled)" : "(remote-only disabled)"}
+                      </p>
+                    </div>
+                    <div className="summary-card">
+                      <span className="summary-label">Run Funnel</span>
+                      <strong className="summary-value">
+                        {marketSnapshot.runs_30d.avg_keyword_jobs_count.toFixed(1)} keyword avg ·{" "}
+                        {marketSnapshot.runs_30d.avg_emailed_jobs_count.toFixed(1)} emailed avg
+                      </strong>
+                      <p className="summary-help">Average per run over the last 30 days.</p>
+                    </div>
+                    <div className="summary-card">
+                      <span className="summary-label">Top Markets / Sources</span>
+                      <strong className="summary-value">
+                        {marketSnapshot.top_countries.slice(0, 2).map((x) => x.label).join(", ") || "Unknown"}
+                      </strong>
+                      <p className="summary-help">
+                        Sources: {marketSnapshot.top_sources.slice(0, 3).map((x) => x.label).join(", ") || "-"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="dashboard-summary-grid">
+                    <div className="summary-card">
+                      <span className="summary-label">Top Countries</span>
+                      <ul className="simple-list compact-list">
+                        {marketSnapshot.top_countries.length ? (
+                          marketSnapshot.top_countries.map((row) => (
+                            <li key={row.label}>
+                              {row.label}: {row.count}
+                            </li>
+                          ))
+                        ) : (
+                          <li>No country data yet (older records may predate location normalization).</li>
+                        )}
+                      </ul>
+                    </div>
+                    <div className="summary-card">
+                      <span className="summary-label">Top Sources</span>
+                      <ul className="simple-list compact-list">
+                        {marketSnapshot.top_sources.length ? (
+                          marketSnapshot.top_sources.map((row) => (
+                            <li key={row.label}>
+                              {row.label}: {row.count}
+                            </li>
+                          ))
+                        ) : (
+                          <li>No source usage data yet.</li>
+                        )}
+                      </ul>
+                    </div>
+                    <div className="summary-card">
+                      <span className="summary-label">Career Value Suggestions</span>
+                      <ul className="simple-list compact-list">
+                        {(marketRecommendations.length ? marketRecommendations : [
+                          "Keep expanding global ATS sources and refine keyword + tech tags as data accumulates."
+                        ]).slice(0, 4).map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : null}
 
           <div className="completion-card">
             <div className="completion-head">

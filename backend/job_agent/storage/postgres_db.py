@@ -376,10 +376,12 @@ def upsert_sent_job_records(
             (
                 user_id,
                 job_key,
-                _none_or_str(job.get("source")),
+                _none_or_str(job.get("source") or job.get("_source")),
                 _none_or_str(job.get("url")),
                 _none_or_str(job.get("position")),
                 _none_or_str(job.get("company")),
+                _none_or_str(job.get("location_text") or job.get("location")),
+                _json_dumps_or_none(job.get("normalized_location") if isinstance(job.get("normalized_location"), dict) else None),
             )
         )
 
@@ -390,15 +392,17 @@ def upsert_sent_job_records(
         cur.executemany(
             """
             INSERT INTO sent_job_records (
-              user_id, job_key, source, job_url, title, company, first_sent_at, last_seen_at
+              user_id, job_key, source, job_url, title, company, location_text, normalized_location_jsonb, first_sent_at, last_seen_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, NOW(), NOW())
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, NOW(), NOW())
             ON CONFLICT (user_id, job_key)
             DO UPDATE SET
               source = COALESCE(EXCLUDED.source, sent_job_records.source),
               job_url = COALESCE(EXCLUDED.job_url, sent_job_records.job_url),
               title = COALESCE(EXCLUDED.title, sent_job_records.title),
               company = COALESCE(EXCLUDED.company, sent_job_records.company),
+              location_text = COALESCE(EXCLUDED.location_text, sent_job_records.location_text),
+              normalized_location_jsonb = COALESCE(EXCLUDED.normalized_location_jsonb, sent_job_records.normalized_location_jsonb),
               last_seen_at = NOW()
             """,
             rows,
