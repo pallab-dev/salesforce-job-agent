@@ -6,6 +6,14 @@ sources:
   - greenhouse
   - lever
   - workday
+  - custom_careers
+  - ashby
+  - smartrecruiters
+  - bamboohr
+  - jobvite
+  - icims
+  - personio
+  - recruitee
 
 limits:
   llm_input_limit: 50
