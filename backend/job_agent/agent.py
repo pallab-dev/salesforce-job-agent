@@ -154,6 +154,38 @@ def _normalize_terms(items: list[str] | None) -> list[str]:
     return out
 
 
+def _display_keyword(keyword: str) -> str:
+    raw = str(keyword or "").strip()
+    if not raw:
+        return ""
+    has_comma = "," in raw
+    parts = [part.strip() for part in raw.split(",") if part.strip()]
+    if has_comma and parts:
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for part in parts:
+            key = part.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(part)
+        return ", ".join(deduped)
+
+    # Fallback for malformed space-joined values like "salesforce developer salesforce apex".
+    tokens = [tok for tok in raw.split() if tok]
+    if not tokens:
+        return raw
+    seen_tokens: set[str] = set()
+    deduped_tokens: list[str] = []
+    for tok in tokens:
+        key = tok.lower()
+        if key in seen_tokens:
+            continue
+        seen_tokens.add(key)
+        deduped_tokens.append(tok)
+    return ", ".join(deduped_tokens)
+
+
 def _looks_like_software_focus(options: AgentOptions) -> bool:
     keyword = (options.keyword or "").strip().lower()
     if any(term in keyword for term in SOFTWARE_FOCUS_HINTS):
@@ -615,7 +647,7 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
     )
 
     if not keyword_jobs:
-        print(f"No jobs found for keyword: {options.keyword}")
+        print(f"No jobs found for keyword: {_display_keyword(options.keyword)}")
         return 0
 
     candidate_jobs, store, seen_before, current_keys = _load_previous_snapshot(

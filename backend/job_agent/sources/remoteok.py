@@ -22,6 +22,7 @@ def filter_jobs_by_keyword(jobs: list[dict[str, Any]], keyword: str) -> list[dic
     if not needle:
         return jobs
     aliases = _keyword_aliases(needle)
+    token_fallback = _keyword_token_fallback_terms(needle)
 
     matched: list[dict[str, Any]] = []
     for job in jobs:
@@ -38,35 +39,42 @@ def filter_jobs_by_keyword(jobs: list[dict[str, Any]], keyword: str) -> list[dic
 
         if any(term in haystack for term in aliases):
             matched.append(job)
+            continue
+        # Fallback for malformed concatenated queries (e.g. "salesforce developer salesforce apex"):
+        # if all unique tokens are present somewhere in the job text, treat it as a match.
+        if token_fallback and all(term in haystack for term in token_fallback):
+            matched.append(job)
     return matched
 
 
 def _keyword_aliases(needle: str) -> list[str]:
-    aliases = [needle]
-    compact = " ".join(needle.split())
-    if compact == "developer":
-        aliases.extend(
-            [
-                "engineer",
-                "software engineer",
-                "software developer",
-                "sde",
-                "backend engineer",
-                "back-end engineer",
-                "full stack engineer",
-                "full-stack engineer",
-            ]
-        )
-    elif compact.endswith(" developer"):
-        prefix = compact[: -len(" developer")].strip()
-        if prefix:
+    aliases: list[str] = []
+    for chunk in _keyword_chunks(needle):
+        aliases.append(chunk)
+        compact = " ".join(chunk.split())
+        if compact == "developer":
             aliases.extend(
                 [
-                    f"{prefix} engineer",
-                    f"software {prefix} engineer",
-                    f"{prefix} software engineer",
+                    "engineer",
+                    "software engineer",
+                    "software developer",
+                    "sde",
+                    "backend engineer",
+                    "back-end engineer",
+                    "full stack engineer",
+                    "full-stack engineer",
                 ]
             )
+        elif compact.endswith(" developer"):
+            prefix = compact[: -len(" developer")].strip()
+            if prefix:
+                aliases.extend(
+                    [
+                        f"{prefix} engineer",
+                        f"software {prefix} engineer",
+                        f"{prefix} software engineer",
+                    ]
+                )
     # Deduplicate while preserving order.
     seen: set[str] = set()
     out: list[str] = []
@@ -75,6 +83,31 @@ def _keyword_aliases(needle: str) -> list[str]:
             seen.add(item)
             out.append(item)
     return out
+
+
+def _keyword_chunks(needle: str) -> list[str]:
+    parts = [part.strip().lower() for part in needle.split(",")]
+    chunks = [part for part in parts if part]
+    return chunks or [needle.strip().lower()]
+
+
+def _keyword_token_fallback_terms(needle: str) -> list[str]:
+    raw_tokens: list[str] = []
+    for chunk in _keyword_chunks(needle):
+        raw_tokens.extend(chunk.split())
+
+    seen: set[str] = set()
+    tokens: list[str] = []
+    for token in raw_tokens:
+        token = token.strip()
+        if len(token) < 3:
+            continue
+        if token in seen:
+            continue
+        seen.add(token)
+        tokens.append(token)
+    # Require at least two unique tokens to avoid broadening simple keywords.
+    return tokens if len(tokens) >= 2 else []
 
 
 def llm_payload(jobs: list[dict[str, Any]], limit: int = 15) -> list[dict[str, str]]:
