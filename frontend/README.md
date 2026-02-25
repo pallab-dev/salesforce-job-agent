@@ -38,6 +38,7 @@ Current preference controls exposed in the dashboard include:
   - tabbed user workspace (`overview`, `preferences`)
   - user can toggle account status (`Active` / `Deactive`)
   - `Switch User` clears session and returns to `/auth`
+  - overview includes `Market Opportunity` insights (recent sent-job volume, top countries/sources, remote mix, run funnel averages, and tuning suggestions)
 - `/admin`
   - allowlist-protected operational view
   - user table + preferences + state + run logs + admin audit logs
@@ -101,3 +102,17 @@ Examples:
 - `tech_stack_tags`
 - `negative_keywords`
 - onboarding/product preferences (`alert_frequency`, `primary_goal`, etc.)
+
+## Dashboard Market Insights Notes
+
+The dashboard overview now uses backend-derived analytics from PostgreSQL:
+
+- recent `sent_job_records` (30-day source/country/remote mix)
+- recent `run_logs` (success rate + keyword/emailed averages)
+
+This depends on backend schema updates that add normalized location data columns to `sent_job_records`. Re-run backend schema init after pulling backend changes:
+
+```bash
+cd ../backend
+python3 -m job_agent.db_main db init
+```

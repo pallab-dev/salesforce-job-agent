@@ -7,8 +7,8 @@ import re
 def clean_llm_output(text: str, max_bullets: int = 8) -> str:
     text = html.unescape(text or "")
 
-    # Remove fenced code blocks if the model ignores instructions.
-    text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+    # Models sometimes wrap valid bullets in markdown fences; strip fence markers only.
+    text = re.sub(r"^\s*```[^\n]*\s*$", "", text, flags=re.MULTILINE)
 
     if text.strip() == "NONE":
         return "NONE"

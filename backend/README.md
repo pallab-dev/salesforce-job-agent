@@ -7,7 +7,7 @@ Monorepo note:
 
 Automated job alert agent that:
 
-- fetches jobs from multiple sources (`RemoteOK`, `Remotive`, `Greenhouse`, `Lever`, `Workday`/company boards)
+- fetches jobs from multiple sources (`RemoteOK`, `Remotive`, `Greenhouse`, `Lever`, `Workday`/company boards, global ATS adapters, custom careers pages)
 - filters them with Groq (`llama-3.1-8b-instant`)
 - emails results through Gmail SMTP
 - runs on GitHub Actions every 8 hours
@@ -66,7 +66,7 @@ config/
   profiles/
     default.yml            # profile defaults (config-driven behavior)
   sources/
-    companies.yml          # Greenhouse/Lever/Workday company board source config
+    companies.yml          # Company source config (ATS + custom careers candidates)
 
 job_agent/
   main.py                  # CLI entrypoint
@@ -74,10 +74,13 @@ job_agent/
   profile_config.py        # YAML profile config loader
   agent.py                 # orchestration logic
   sources/remoteok.py      # job source integration
-  sources/registry.py      # source selection/aggregation (config-driven)
+  sources/registry.py      # source selection/aggregation (config-driven + source metadata)
+  sources/global_ats.py    # global ATS + custom careers adapters
+  source_onboarding.py     # source validation cache / auto-onboarding
   llm/groq.py              # Groq API call + prompt
   notify/emailer.py        # Gmail SMTP sender
   utils/cleaning.py        # LLM output cleanup
+  utils/location_normalization.py  # normalized location fields for downstream filtering/insights
   storage/seen_jobs.py     # snapshot file read/write
 
 .github/workflows/agent.yml
@@ -175,6 +178,39 @@ Useful options:
 - `--seen-file` custom snapshot file path (default `.job_agent/seen_jobs.json`)
 - `--profile-config` custom YAML config path (default `config/profiles/<profile>.yml`)
 
+## DB CLI (Users + Source Validation)
+
+Initialize / migrate schema (safe to run repeatedly):
+
+```bash
+python -m job_agent.db_main db init
+```
+
+Validate configured company source candidates and update runtime activation cache:
+
+```bash
+python -m job_agent.db_main sources validate --timeout-seconds 15
+```
+
+Print a readable validation cache report (stdout only):
+
+```bash
+python -m job_agent.db_main sources report --max-rows 10
+```
+
+Scheduled all-user run with automatic source validation first (default behavior for `--all-users`):
+
+```bash
+python -m job_agent.db_main run --all-users --source-validate-timeout-seconds 15
+```
+
+Notes:
+
+- `run --all-users` validates company source candidates before fetching jobs unless `--no-validate-sources` is used.
+- Validation state is cached in `backend/.job_agent/source_validation_cache.json`.
+- `sources report` reads the cache and prints a grouped summary (`active / paused / error / no_jobs / candidate`).
+- PostgreSQL connections disable psycopg server-side prepared statements by default to avoid PgBouncer/Supabase transaction-pooling errors (for example `prepared statement "_pg3_0" does not exist`).
+
 ## Minimal Login UI (Prototype)
 
 You can run a very small local web UI that creates/updates a user in PostgreSQL on login.
@@ -244,7 +280,7 @@ Note:
 - If you add an unimplemented source (for example `workday` before its adapter exists) the agent will print a skip message and continue.
 - This is the first step toward fully config-driven multi-source support.
 
-### Company Board Plugins (Greenhouse / Lever)
+### Company Board Plugins + Global ATS / Custom Careers
 
 You can now enable company career pages (via ATS platforms) without changing Python code.
 
@@ -254,6 +290,14 @@ Supported plugins:
 - `lever`
 - `workday` (starter/custom path implemented; company-specific endpoints may still be needed)
 - `workday` / `custom` / `salesforce_careers` (via the `workday` plugin path)
+- `ashby`
+- `smartrecruiters`
+- `bamboohr`
+- `jobvite`
+- `icims`
+- `personio`
+- `recruitee`
+- `custom_careers` (generic public careers page / JSON / XML best-effort adapter)
 
 Add them to your shared profile config (already enabled in `config/profiles/default.yml` in this repo):
 
@@ -298,6 +342,24 @@ Notes:
 - FAANG + Salesforce targets are added in `config/sources/companies.yml` under `workday` as planned entries
 - Salesforce is wired now via the `salesforce_careers` listing parser (configured under `workday`)
 - Most other FAANG targets will still need company-specific `api_url` values (or dedicated adapters) before they return jobs
+- A curated `custom_careers` candidate pack (service/product/startup mix) is included and uses `onboarding_state: candidate` so runtime activation is automatic after validation.
+- Mark repeated hard-fail candidates as `onboarding_state: paused` to reduce validation noise until a better endpoint/URL is available.
+
+### Automatic Source Onboarding (Candidates -> Active)
+
+Company-source entries can be onboarded without manual activation by using:
+
+- `onboarding_state: candidate` in `config/sources/companies.yml`
+- `python -m job_agent.db_main sources validate` to check candidates and update runtime state cache
+- `python -m job_agent.db_main run --all-users` (auto-validates first by default)
+
+Only runtime-validated candidates are used in scheduled runs. This keeps onboarding broad while keeping runs fail-soft and fast.
+
+## Email / Filtering Reliability Notes
+
+- LLM output cleanup preserves valid bullets even if the model wraps them in markdown fences (fence markers are stripped, bullet content is kept).
+- If fallback email rendering is used (LLM bullets cannot be mapped back to fetched jobs), bullet lines are parsed and recorded into sent-job history to reduce duplicate re-sends in later runs.
+- Keyword ranking now understands comma-separated multi-keyword preferences and malformed repeated multi-keyword strings, aligning ranking behavior with deterministic keyword filtering.
 
 ## GitHub Actions Setup
 
@@ -339,13 +401,14 @@ How it works:
 
 - GitHub Actions stores shared secrets only: `DATABASE_URL`, `GROQ_API_KEY`, `EMAIL_USER`, `EMAIL_PASS`
 - The workflow initializes the schema (`python -m job_agent.db_main db init`)
-- The workflow runs all active DB users (`python -m job_agent.db_main run --all-users`)
+- The workflow runs all active DB users (`python -m job_agent.db_main run --all-users`) and auto-validates company source candidates first by default
 - Users are stored in PostgreSQL (`users` table) with `username` + `email_to`
 - User-specific preferences (optional) are stored in `user_preferences` (keyword/limits/filters; sources stay in shared YAML config)
 - Shared defaults continue to come from `config/profiles/default.yml`
 - Scheduler fetches each unique source-set once per run and reuses the result for multiple users (shared in-memory cache)
 - `run_logs` now records fetched/keyword/emailed counts for each DB user run
 - `sent_job_records` is used to build carryover sections without re-sending old jobs to Groq
+- `sent_job_records` now stores normalized location metadata used by dashboard market opportunity insights
 - Single-user DB runs (`run --user ...`) and all-user DB runs now use the same state/logging behavior (`run_logs` + `user_state` updates)
 
 ### What You Need To Sign Up For (Free)

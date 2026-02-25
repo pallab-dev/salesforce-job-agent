@@ -4,6 +4,24 @@ This project keeps a lightweight iteration log tied to Git commit IDs so collabo
 
 ## Iteration History
 
+### 2026-02-25 - DB connection compatibility and email/filtering hardening
+
+- Summary: Disabled psycopg server-side prepared statements by default for PostgreSQL connections to avoid PgBouncer/Supabase transaction-pooling errors (`prepared statement "_pg3_*" does not exist`), preserved valid LLM bullets when wrapped in markdown fences, ensured fallback LLM bullet output is parsed/recorded into sent-job history, and aligned keyword scoring with comma-separated/malformed multi-keyword filtering behavior.
+- Why: Prevent post-email DB write failures in scheduled runs, avoid dropping valid LLM output due to formatting noise, stop duplicate re-sends when fallback email rendering is used, and improve ranking consistency for multi-keyword user preferences.
+- Commit: pending
+
+### 2026-02-25 - Global ATS onboarding automation, location insights, and source validation reporting
+
+- Summary: Added a generic source interface/registry foundation, global ATS adapters (`Ashby`, `SmartRecruiters`, `BambooHR`, `Jobvite`, `iCIMS`, `Personio`, `Recruitee`) plus `custom_careers`, a 50-company candidate pack with automatic runtime validation/activation (`sources validate`), scheduler pre-run source validation for `run --all-users`, source cache reporting (`sources report`), centralized location normalization for all ingested jobs, persisted normalized sent-job location metadata, and dashboard market opportunity insights based on `sent_job_records` + `run_logs`.
+- Why: Scale job source coverage safely, keep scheduled runs fail-soft, reduce onboarding/manual activation work, and provide users with actionable market-demand guidance in the dashboard.
+- Commit: `b8c81c7` - `Add global ATS onboarding automation and market insights`
+
+### 2026-02-25 - Scheduled keyword matching hardening and display normalization
+
+- Summary: Fixed malformed/repeated keyword strings in scheduled DB runs by improving keyword matching fallback (token-based) and normalizing no-match keyword display logging.
+- Why: Prevent false negatives when saved keywords are malformed (e.g. repeated space-joined terms) and make scheduler logs easier to read.
+- Commit: `43e7539` - `Fix malformed scheduled keyword matching and logging`
+
 ### 2026-02-24 - Email digest dedupe and grouped rendering polish
 
 - Summary: Deduplicated repeated LLM bullets by URL, switched digest sections to grouped job rendering (company-level compression for larger clusters), updated subject lines to count-based alert wording, and fixed DB run consistency (single-user DB runs now write the same logs/state as multi-user runs).

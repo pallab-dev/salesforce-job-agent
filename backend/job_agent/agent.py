@@ -154,6 +154,39 @@ def _normalize_terms(items: list[str] | None) -> list[str]:
     return out
 
 
+def _keyword_chunks(keyword: str) -> list[str]:
+    raw = str(keyword or "").strip().lower()
+    if not raw:
+        return []
+    parts = [part.strip() for part in raw.split(",")]
+    chunks = [part for part in parts if part]
+    if not chunks:
+        return [raw]
+    seen: set[str] = set()
+    out: list[str] = []
+    for chunk in chunks:
+        if chunk in seen:
+            continue
+        seen.add(chunk)
+        out.append(chunk)
+    return out
+
+
+def _keyword_token_fallback_terms(keyword: str) -> list[str]:
+    raw_tokens: list[str] = []
+    for chunk in _keyword_chunks(keyword):
+        raw_tokens.extend(chunk.split())
+    seen: set[str] = set()
+    out: list[str] = []
+    for token in raw_tokens:
+        token = token.strip().lower()
+        if len(token) < 3 or token in seen:
+            continue
+        seen.add(token)
+        out.append(token)
+    return out if len(out) >= 2 else []
+
+
 def _display_keyword(keyword: str) -> str:
     raw = str(keyword or "").strip()
     if not raw:
@@ -213,35 +246,45 @@ def _is_obviously_irrelevant_for_software(job: dict[str, Any], options: AgentOpt
 
 
 def _keyword_score(job: dict[str, Any], keyword: str) -> int:
-    needle = (keyword or "").strip().lower()
-    if not needle:
+    chunks = _keyword_chunks(keyword)
+    if not chunks:
         return 0
     title = str(job.get("position") or "").lower()
     desc = str(job.get("description") or "").lower()
     tags = " ".join(str(t).lower() for t in (job.get("tags") or []) if t)
     company = str(job.get("company") or "").lower()
+    hay = f"{title}\n{tags}\n{desc}\n{company}"
 
     score = 0
-    if needle in title:
-        score += 8
-    elif needle in tags:
-        score += 5
-    elif needle in desc:
-        score += 3
-    elif needle in company:
-        score += 1
+    for needle in chunks:
+        chunk_score = 0
+        if needle in title:
+            chunk_score += 8
+        elif needle in tags:
+            chunk_score += 5
+        elif needle in desc:
+            chunk_score += 3
+        elif needle in company:
+            chunk_score += 1
+        score = max(score, chunk_score)
 
     # Boost common engineering aliases for generic keywords like "developer".
-    if needle == "developer":
+    if "developer" in chunks:
         if any(term in title for term in ["engineer", "software engineer", "sde"]):
             score += 5
         elif any(term in tags for term in ["engineering", "developer"]):
             score += 2
-    if "java" in needle:
+    if any("java" in chunk for chunk in chunks):
         if "java" in title:
             score += 4
         elif "java" in tags:
             score += 2
+
+    # Keep ranking aligned with filter fallback for malformed concatenated multi-keyword input.
+    token_fallback = _keyword_token_fallback_terms(keyword)
+    if score == 0 and token_fallback and all(term in hay for term in token_fallback):
+        title_hits = sum(1 for term in token_fallback if term in title)
+        score += 4 if title_hits >= 1 else 2
     return score
 
 
@@ -483,6 +526,27 @@ def _match_emailed_jobs_from_output(
                 seen_keys.add(key)
             matched.append(job)
     return matched
+
+
+def _parse_bullet_jobs_from_output(text: str) -> list[dict[str, Any]]:
+    parsed: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line.startswith("- "):
+            continue
+        match = re.match(r"^-\s*(.*?)\s+—\s+(.*?)\s+—\s+(https?://\S+)\s*$", line)
+        if not match:
+            continue
+        title = match.group(1).strip()
+        company = match.group(2).strip()
+        url = match.group(3).rstrip(").,]")
+        key = url or f"{company}::{title}"
+        if not title or not company or not url or key in seen:
+            continue
+        seen.add(key)
+        parsed.append({"position": title, "company": company, "url": url})
+    return parsed
 
 
 def _carryover_jobs_from_sent_history(
@@ -735,6 +799,7 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
                 email_sections.append(_build_grouped_job_section("New matches:", emailed_new_jobs))
             else:
                 # Fallback if the model output cannot be mapped back to known job URLs.
+                emailed_new_jobs = _parse_bullet_jobs_from_output(cleaned_output)
                 fallback_new_match_count = _bullet_line_count(cleaned_output)
                 email_sections.append("New matches:")
                 email_sections.append(cleaned_output)

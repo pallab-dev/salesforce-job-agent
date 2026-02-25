@@ -55,7 +55,13 @@ def get_database_url() -> str:
 
 
 def connect(database_url: str | None = None) -> psycopg.Connection:
-    return psycopg.connect(database_url or get_database_url(), row_factory=dict_row)
+    dsn = database_url or get_database_url()
+    # Disable server-side prepared statements by default to avoid PgBouncer/
+    # transaction-pooling issues (e.g. Supabase) causing "_pg3_* does not exist".
+    try:
+        return psycopg.connect(dsn, row_factory=dict_row, prepare_threshold=None)
+    except TypeError:
+        return psycopg.connect(dsn, row_factory=dict_row)
 
 
 def init_schema(conn: psycopg.Connection) -> None:

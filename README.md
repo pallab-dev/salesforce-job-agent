@@ -30,6 +30,14 @@ export DATABASE_URL='postgresql://...'
 python3 -m job_agent.db_main db init
 ```
 
+Recommended scheduled run (auto-validates company sources, runs all users, prints source report):
+
+```bash
+cd backend
+export DATABASE_URL='postgresql://...'
+PYTHONPATH=. python3 -m job_agent.db_main run --all-users --source-validate-timeout-seconds 15
+```
+
 ### Frontend (web UI)
 
 ```bash
@@ -57,8 +65,9 @@ Then open `http://localhost:3000/admin`.
   - Preferences
   - Finish
 - Resume onboarding is supported and restores the user to the correct next step
+- Dashboard overview includes market opportunity insights (recent source/country/remote mix and run funnel suggestions)
 
-If you pull recent changes, rerun backend schema init to create new tables (for example `admin_audit_logs`):
+If you pull recent changes, rerun backend schema init to apply additive migrations (for example admin audit tables and new `sent_job_records` location columns used by dashboard market insights):
 
 ```bash
 cd backend
