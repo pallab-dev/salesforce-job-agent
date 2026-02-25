@@ -136,6 +136,31 @@ export type AdminAuditLogListResult = {
   tableReady: boolean;
 };
 
+export type ResumeAnalysisPersistenceInput = {
+  userId: number;
+  source: string;
+  resumeText: string;
+  textChecksumSha256: string;
+  analysisVersion: string;
+  promptVersion: string;
+  scoringVersion: string;
+  modelProvider: string;
+  modelName: string;
+  llmUsed: boolean;
+  status: "success" | "fallback";
+  scoreBreakdown: Record<string, unknown>;
+  analysisPayload: Record<string, unknown>;
+  normalizedProfile: Record<string, unknown>;
+  recommendations: Record<string, unknown>;
+  metadata?: Record<string, unknown> | null;
+};
+
+export type ResumeAnalysisPersistenceResult = {
+  resume_version_id: number;
+  resume_insight_id: number;
+  profile_signal_id: number;
+};
+
 export async function upsertUser(input: LoginInput) {
   const pool = getPool();
   const username = input.username.trim();
@@ -543,4 +568,217 @@ export async function setUserActiveStatus(username: string, isActive: boolean): 
     `,
     [username.trim(), isActive]
   );
+}
+
+let resumeIntelligenceTablesReadyPromise: Promise<void> | null = null;
+
+async function ensureResumeIntelligenceTables(): Promise<void> {
+  if (resumeIntelligenceTablesReadyPromise) {
+    return resumeIntelligenceTablesReadyPromise;
+  }
+
+  const pool = getPool();
+  resumeIntelligenceTablesReadyPromise = (async () => {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS resume_versions (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        source TEXT NOT NULL DEFAULT 'onboarding',
+        raw_text TEXT NOT NULL,
+        text_checksum_sha256 TEXT NOT NULL,
+        metadata_jsonb JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_resume_versions_user_created
+      ON resume_versions (user_id, created_at DESC);
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS resume_insights (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        resume_version_id BIGINT NOT NULL REFERENCES resume_versions(id) ON DELETE CASCADE,
+        status TEXT NOT NULL DEFAULT 'success',
+        analysis_version TEXT NOT NULL,
+        prompt_version TEXT NOT NULL,
+        scoring_version TEXT NOT NULL,
+        model_provider TEXT NOT NULL,
+        model_name TEXT NOT NULL,
+        llm_used BOOLEAN NOT NULL DEFAULT FALSE,
+        score_overall INTEGER,
+        score_breakdown_jsonb JSONB,
+        analysis_jsonb JSONB NOT NULL,
+        normalized_signals_jsonb JSONB,
+        recommendations_jsonb JSONB,
+        metadata_jsonb JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_resume_insights_user_created
+      ON resume_insights (user_id, created_at DESC);
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_profile_signals (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        source_resume_version_id BIGINT REFERENCES resume_versions(id) ON DELETE SET NULL,
+        source_resume_insight_id BIGINT REFERENCES resume_insights(id) ON DELETE SET NULL,
+        profile_snapshot_jsonb JSONB NOT NULL,
+        profile_version TEXT NOT NULL DEFAULT 'profile-signals-v1',
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS market_skill_trends (
+        id BIGSERIAL PRIMARY KEY,
+        skill TEXT NOT NULL,
+        market TEXT,
+        trend_window TEXT NOT NULL DEFAULT '30d',
+        demand_score NUMERIC(8,2),
+        demand_delta NUMERIC(8,2),
+        sample_size INTEGER,
+        observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        metadata_jsonb JSONB
+      );
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_market_skill_trends_skill_observed
+      ON market_skill_trends (skill, observed_at DESC);
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_match_runs (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        run_reason TEXT NOT NULL,
+        resume_insight_id BIGINT REFERENCES resume_insights(id) ON DELETE SET NULL,
+        market_snapshot_at TIMESTAMPTZ,
+        score_jsonb JSONB,
+        matches_count INTEGER,
+        recommendations_jsonb JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_alerts (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        alert_type TEXT NOT NULL,
+        channel TEXT NOT NULL DEFAULT 'in_app',
+        status TEXT NOT NULL DEFAULT 'pending',
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        metadata_jsonb JSONB,
+        sent_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_user_alerts_user_created
+      ON user_alerts (user_id, created_at DESC);
+    `);
+  })().catch((error) => {
+    resumeIntelligenceTablesReadyPromise = null;
+    throw error;
+  });
+
+  return resumeIntelligenceTablesReadyPromise;
+}
+
+export async function saveResumeAnalysisArtifacts(
+  input: ResumeAnalysisPersistenceInput
+): Promise<ResumeAnalysisPersistenceResult> {
+  await ensureResumeIntelligenceTables();
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const resumeVersionResult = await client.query(
+      `
+        INSERT INTO resume_versions (
+          user_id, source, raw_text, text_checksum_sha256, metadata_jsonb, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5::jsonb, NOW())
+        RETURNING id
+      `,
+      [
+        input.userId,
+        input.source,
+        input.resumeText,
+        input.textChecksumSha256,
+        input.metadata ? JSON.stringify(input.metadata) : null
+      ]
+    );
+    const resumeVersionId = Number(resumeVersionResult.rows[0].id);
+
+    const scoreOverallRaw = input.scoreBreakdown["overall_score"];
+    const scoreOverall =
+      typeof scoreOverallRaw === "number"
+        ? Math.max(0, Math.min(100, Math.round(scoreOverallRaw)))
+        : typeof scoreOverallRaw === "string" && scoreOverallRaw.trim()
+          ? Math.max(0, Math.min(100, Math.round(Number(scoreOverallRaw))))
+          : null;
+
+    const insightResult = await client.query(
+      `
+        INSERT INTO resume_insights (
+          user_id, resume_version_id, status, analysis_version, prompt_version, scoring_version,
+          model_provider, model_name, llm_used, score_overall, score_breakdown_jsonb,
+          analysis_jsonb, normalized_signals_jsonb, recommendations_jsonb, metadata_jsonb, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13::jsonb, $14::jsonb, $15::jsonb, NOW())
+        RETURNING id
+      `,
+      [
+        input.userId,
+        resumeVersionId,
+        input.status,
+        input.analysisVersion,
+        input.promptVersion,
+        input.scoringVersion,
+        input.modelProvider,
+        input.modelName,
+        input.llmUsed,
+        scoreOverall,
+        JSON.stringify(input.scoreBreakdown),
+        JSON.stringify(input.analysisPayload),
+        JSON.stringify(input.normalizedProfile),
+        JSON.stringify(input.recommendations),
+        input.metadata ? JSON.stringify(input.metadata) : null
+      ]
+    );
+    const resumeInsightId = Number(insightResult.rows[0].id);
+
+    const profileSignalResult = await client.query(
+      `
+        INSERT INTO user_profile_signals (
+          user_id, source_resume_version_id, source_resume_insight_id, profile_snapshot_jsonb, profile_version, updated_at
+        )
+        VALUES ($1, $2, $3, $4::jsonb, $5, NOW())
+        ON CONFLICT (user_id)
+        DO UPDATE SET
+          source_resume_version_id = EXCLUDED.source_resume_version_id,
+          source_resume_insight_id = EXCLUDED.source_resume_insight_id,
+          profile_snapshot_jsonb = EXCLUDED.profile_snapshot_jsonb,
+          profile_version = EXCLUDED.profile_version,
+          updated_at = NOW()
+        RETURNING id
+      `,
+      [input.userId, resumeVersionId, resumeInsightId, JSON.stringify(input.normalizedProfile), "profile-signals-v1"]
+    );
+    const profileSignalId = Number(profileSignalResult.rows[0].id);
+
+    await client.query("COMMIT");
+    return {
+      resume_version_id: resumeVersionId,
+      resume_insight_id: resumeInsightId,
+      profile_signal_id: profileSignalId
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
