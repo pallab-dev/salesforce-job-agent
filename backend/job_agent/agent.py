@@ -73,6 +73,52 @@ SOFTWARE_TITLE_SOFT_NEGATIVE_TERMS = (
     "product manager",
     "analyst",
 )
+ROLE_HINT_TERMS = (
+    "engineer",
+    "developer",
+    "architect",
+    "programmer",
+    "sde",
+    "backend",
+    "frontend",
+    "full stack",
+    "full-stack",
+)
+SENIORITY_HINT_TERMS = ("junior", "jr", "entry", "associate", "mid", "senior", "lead", "staff", "principal")
+TECH_STACK_HINT_TERMS = {
+    "java",
+    "golang",
+    "go-lang",
+    "angular",
+    "react",
+    "node",
+    "nodejs",
+    "python",
+    "django",
+    "flask",
+    "fastapi",
+    "spring",
+    "springboot",
+    "aws",
+    "azure",
+    "gcp",
+    "docker",
+    "kubernetes",
+    "k8s",
+    "salesforce",
+    "apex",
+    "lwc",
+    "soql",
+    "etl",
+    "sql",
+    "postgres",
+    "mysql",
+    "mongodb",
+    "redis",
+    "graphql",
+    "typescript",
+    "javascript",
+}
 
 
 @dataclass(frozen=True)
@@ -97,6 +143,14 @@ class AgentOptions:
     negative_keywords: list[str] | None = None
     alert_frequency: str | None = None
     primary_goal: str | None = None
+
+
+@dataclass(frozen=True)
+class QueryIntent:
+    role_terms: list[str]
+    stack_terms: list[str]
+    seniority_terms: list[str]
+    work_mode_terms: list[str]
 
 
 def _require_env(settings: Settings, *, require_email: bool) -> None:
@@ -185,6 +239,117 @@ def _keyword_token_fallback_terms(keyword: str) -> list[str]:
         seen.add(token)
         out.append(token)
     return out if len(out) >= 2 else []
+
+
+def _dedupe_terms(terms: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for term in terms:
+        t = str(term or "").strip().lower()
+        if not t or t in seen:
+            continue
+        seen.add(t)
+        out.append(t)
+    return out
+
+
+def _infer_query_intent(options: AgentOptions) -> QueryIntent:
+    keyword_chunks = _keyword_chunks(options.keyword)
+    keyword_tokens = _keyword_token_fallback_terms(options.keyword)
+
+    role_terms: list[str] = _normalize_terms(options.target_roles)
+    stack_terms: list[str] = _normalize_terms(options.tech_stack_tags)
+    seniority_terms: list[str] = []
+    work_mode_terms: list[str] = []
+
+    for chunk in keyword_chunks:
+        compact = " ".join(chunk.split())
+        if any(term in compact for term in ROLE_HINT_TERMS):
+            role_terms.append(compact)
+        if compact in {"remote", "hybrid", "onsite", "on-site", "wfh"}:
+            work_mode_terms.append(compact.replace("on-site", "onsite"))
+        if compact in SENIORITY_HINT_TERMS:
+            seniority_terms.append(compact)
+
+    for token in keyword_tokens:
+        norm = token.replace("-", "")
+        if token in TECH_STACK_HINT_TERMS or norm in TECH_STACK_HINT_TERMS:
+            stack_terms.append(token if token in TECH_STACK_HINT_TERMS else norm)
+        if token in SENIORITY_HINT_TERMS:
+            seniority_terms.append(token)
+        if token in {"remote", "hybrid", "onsite", "wfh"}:
+            work_mode_terms.append(token)
+
+    return QueryIntent(
+        role_terms=_dedupe_terms(role_terms),
+        stack_terms=_dedupe_terms(stack_terms),
+        seniority_terms=_dedupe_terms(seniority_terms),
+        work_mode_terms=_dedupe_terms(work_mode_terms),
+    )
+
+
+def _effective_experience_level(options: AgentOptions) -> str:
+    exp = str(options.experience_level or "").strip().lower()
+    if exp:
+        return exp
+    intent = _infer_query_intent(options)
+    seniority = set(intent.seniority_terms)
+    if seniority & {"senior", "lead", "staff", "principal"}:
+        return "senior"
+    if seniority & {"junior", "jr", "entry", "associate"}:
+        return "entry"
+    if "mid" in seniority:
+        return "mid"
+    return ""
+
+
+def _job_search_hay(job: dict[str, Any]) -> tuple[str, str, str]:
+    title = str(job.get("position") or "").lower()
+    desc = str(job.get("description") or "").lower()
+    tags = " ".join(str(t).lower() for t in (job.get("tags") or []) if t)
+    company = str(job.get("company") or "").lower()
+    location = str(job.get("location") or "").lower()
+    hay = f"{title}\n{desc}\n{tags}\n{company}\n{location}"
+    return title, location, hay
+
+
+def _matches_intent_signals(job: dict[str, Any], intent: QueryIntent) -> bool:
+    if not (intent.role_terms or intent.stack_terms or intent.seniority_terms or intent.work_mode_terms):
+        return False
+    title, location, hay = _job_search_hay(job)
+
+    if intent.role_terms and any(term in title or term in hay for term in intent.role_terms):
+        return True
+    # OR semantics across stack terms (java OR golang OR angular...)
+    if intent.stack_terms and any(term in hay for term in intent.stack_terms):
+        return True
+    if intent.seniority_terms and any(term in title for term in intent.seniority_terms):
+        return True
+    if intent.work_mode_terms:
+        if any(term in hay or term in location for term in intent.work_mode_terms):
+            return True
+        if "remote" in intent.work_mode_terms and str(job.get("remote_type") or "").lower() == "remote":
+            return True
+    return False
+
+
+def _source_label(job: dict[str, Any]) -> str:
+    return str(job.get("_source") or job.get("source") or "unknown")
+
+
+def _log_source_breakdown(label: str, jobs: list[dict[str, Any]], *, max_rows: int = 8) -> None:
+    if not jobs:
+        return
+    counts: dict[str, int] = {}
+    for job in jobs:
+        source = _source_label(job)
+        counts[source] = counts.get(source, 0) + 1
+    top = sorted(counts.items(), key=lambda item: item[1], reverse=True)
+    shown = ", ".join(f"{name}={count}" for name, count in top[:max_rows])
+    remainder = len(top) - min(len(top), max_rows)
+    if remainder > 0:
+        shown = f"{shown}, +{remainder} more"
+    print(f"{label}: {shown}")
 
 
 def _display_keyword(keyword: str) -> str:
@@ -354,7 +519,7 @@ def _score_job_for_profile(job: dict[str, Any], options: AgentOptions) -> int:
         elif tag in hay:
             score += 2
 
-    exp = (options.experience_level or "").strip().lower()
+    exp = _effective_experience_level(options)
     if exp in {"senior", "staff"}:
         if any(term in title for term in ["senior", "staff", "principal", "lead", "architect"]):
             score += 3
@@ -399,6 +564,50 @@ def _rank_jobs_for_profile(jobs: list[dict[str, Any]], options: AgentOptions) ->
         reverse=True,
     )
     return ranked
+
+
+def _filter_jobs_for_profile_intent(jobs: list[dict[str, Any]], options: AgentOptions) -> list[dict[str, Any]]:
+    keyword_jobs = filter_jobs_by_keyword(jobs, options.keyword)
+    intent = _infer_query_intent(options)
+    if not (intent.role_terms or intent.stack_terms or intent.seniority_terms or intent.work_mode_terms):
+        return keyword_jobs
+
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    widened = 0
+
+    for job in keyword_jobs:
+        key = stable_job_key(job) or f"obj:{id(job)}"
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(job)
+
+    for job in jobs:
+        key = stable_job_key(job) or f"obj:{id(job)}"
+        if key in seen:
+            continue
+        if not _matches_intent_signals(job, intent):
+            continue
+        seen.add(key)
+        out.append(job)
+        widened += 1
+
+    if widened:
+        intent_bits: list[str] = []
+        if intent.role_terms:
+            intent_bits.append(f"roles({len(intent.role_terms)})")
+        if intent.stack_terms:
+            intent_bits.append(f"stack-or({len(intent.stack_terms)})")
+        if intent.seniority_terms:
+            intent_bits.append(f"seniority({len(intent.seniority_terms)})")
+        if intent.work_mode_terms:
+            intent_bits.append(f"work-mode({len(intent.work_mode_terms)})")
+        print(
+            "Intent-aware deterministic filter widened matches by "
+            f"{widened} job(s) using {', '.join(intent_bits)}"
+        )
+    return out
 
 
 def _new_jobs_only(jobs: list[dict[str, Any]], seen_before: set[str]) -> list[dict[str, Any]]:
@@ -701,7 +910,9 @@ def run_agent(settings: Settings, options: AgentOptions) -> int:
     else:
         jobs = fetch_jobs_from_sources(settings, options.sources or ["remoteok"])
         print(f"Fetched jobs from sources: {sources_label} | total: {len(jobs)}")
-    keyword_jobs = filter_jobs_by_keyword(jobs, options.keyword)
+    _log_source_breakdown("Fetched jobs by source", jobs)
+    keyword_jobs = _filter_jobs_for_profile_intent(jobs, options)
+    _log_source_breakdown("Deterministic matched jobs by source", keyword_jobs)
     keyword_jobs = _rank_jobs_for_profile(keyword_jobs, options)
     _set_run_metrics(
         options,
