@@ -6,9 +6,11 @@ This project keeps a lightweight iteration log tied to Git commit IDs so collabo
 
 ### 2026-02-25 - DB connection compatibility and email/filtering hardening
 
-- Summary: Disabled psycopg server-side prepared statements by default for PostgreSQL connections to avoid PgBouncer/Supabase transaction-pooling errors (`prepared statement "_pg3_*" does not exist`), preserved valid LLM bullets when wrapped in markdown fences, ensured fallback LLM bullet output is parsed/recorded into sent-job history, and aligned keyword scoring with comma-separated/malformed multi-keyword filtering behavior.
+- Summary: Disabled psycopg server-side prepared statements by default for PostgreSQL connections to avoid PgBouncer/Supabase transaction-pooling errors (`prepared statement "_pg3_*" does not exist`), preserved valid LLM bullets when wrapped in markdown fences, ensured fallback LLM bullet output is parsed/recorded into sent-job history, aligned keyword scoring with comma-separated/malformed multi-keyword filtering behavior, and added intent-aware deterministic filtering that widens matches using role/tech-stack/seniority/work-mode signals (including `OR` semantics for tech stack terms like `java OR golang OR angular`) plus per-source fetched/matched breakdown logs.
 - Why: Prevent post-email DB write failures in scheduled runs, avoid dropping valid LLM output due to formatting noise, stop duplicate re-sends when fallback email rendering is used, and improve ranking consistency for multi-keyword user preferences.
-- Commit: pending
+- Commits:
+  - `0162575` - `Harden email filtering flow and DB connection compatibility`
+  - `eb0ff60` - `Add intent-aware deterministic job filtering`
 
 ### 2026-02-25 - Global ATS onboarding automation, location insights, and source validation reporting
 

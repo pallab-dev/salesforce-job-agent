@@ -209,6 +209,7 @@ Notes:
 - `run --all-users` validates company source candidates before fetching jobs unless `--no-validate-sources` is used.
 - Validation state is cached in `backend/.job_agent/source_validation_cache.json`.
 - `sources report` reads the cache and prints a grouped summary (`active / paused / error / no_jobs / candidate`).
+- Scheduled runs now also print per-source fetched/matched breakdown logs inside the agent run (useful for verifying global ATS and `custom_careers` contribution).
 - PostgreSQL connections disable psycopg server-side prepared statements by default to avoid PgBouncer/Supabase transaction-pooling errors (for example `prepared statement "_pg3_0" does not exist`).
 
 ## Minimal Login UI (Prototype)
@@ -360,6 +361,12 @@ Only runtime-validated candidates are used in scheduled runs. This keeps onboard
 - LLM output cleanup preserves valid bullets even if the model wraps them in markdown fences (fence markers are stripped, bullet content is kept).
 - If fallback email rendering is used (LLM bullets cannot be mapped back to fetched jobs), bullet lines are parsed and recorded into sent-job history to reduce duplicate re-sends in later runs.
 - Keyword ranking now understands comma-separated multi-keyword preferences and malformed repeated multi-keyword strings, aligning ranking behavior with deterministic keyword filtering.
+- Deterministic pre-LLM filtering is now intent-aware and can widen matches using profile signals / inferred keyword intent:
+  - role-like terms (for example `backend engineer`, `salesforce developer`)
+  - tech stack tags (matched with `OR` semantics, e.g. `java OR golang OR angular`)
+  - seniority hints (`junior`, `senior`, `lead`, etc.)
+  - work-mode hints (`remote`, `hybrid`, `onsite`)
+- This widening is bounded and still followed by deterministic ranking + LLM selection.
 
 ## GitHub Actions Setup
 
