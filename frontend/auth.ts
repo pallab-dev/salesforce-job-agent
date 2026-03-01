@@ -1,6 +1,6 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
-import { getUserByEmail, getUserByUsername, upsertUser } from "./lib/db";
+import { getUserByUsername } from "./lib/db";
 
 function envOrPlaceholder(name: string): string {
   return process.env[name]?.trim() || `missing-${name.toLowerCase()}`;
@@ -23,23 +23,9 @@ export const { handlers, auth } = NextAuth({
   callbacks: {
     async signIn({ user }) {
       const email = (user.email || "").trim().toLowerCase();
-      if (!email) {
-        return false;
-      }
-
-      try {
-        const existing = await getUserByEmail(email);
-        const username = existing?.username || usernameFromEmail(email);
-        await upsertUser({
-          username,
-          emailTo: email,
-          timezone: null
-        });
-        return true;
-      } catch (error) {
-        console.error("Failed to upsert user during sign-in", error);
-        return false;
-      }
+      // Keep provider sign-in lightweight and resilient.
+      // DB sync/creation is handled in /api/auth/sync-session.
+      return Boolean(email);
     },
     async session({ session }) {
       const email = (session.user?.email || "").trim().toLowerCase();
