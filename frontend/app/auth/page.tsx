@@ -187,7 +187,7 @@ export default function AuthPage() {
             <h3>Google OAuth</h3>
             <p>Fast sign-in for existing users.</p>
           </div>
-          <a className="btn btn-link" href="/api/auth/signin/google?callbackUrl=/api/auth/sync-session">
+          <a className="btn btn-link" href="/api/auth/signin?provider=google&callbackUrl=%2Fapi%2Fauth%2Fsync-session">
             Continue with Google
           </a>
         </div>
