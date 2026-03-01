@@ -1,8 +1,15 @@
 import Link from "next/link";
 
+const flowSteps = [
+  { title: "Verify", detail: "Sign in with Gmail OTP verification" },
+  { title: "Configure", detail: "Pick target roles and stack using guided selectors" },
+  { title: "Upload", detail: "Upload resume and auto-fill profile signals" },
+  { title: "Track", detail: "Get cleaner alerts and iterate from dashboard" }
+] as const;
+
 export default function HomePage() {
   return (
-    <main className="landing-shell">
+    <main className="landing-shell modern-landing">
       <header className="landing-topbar">
         <div className="brand-lockup">
           <div className="brand-mark" aria-hidden="true">
@@ -12,12 +19,12 @@ export default function HomePage() {
           </div>
           <div>
             <p className="eyebrow">AI Job Agent</p>
-            <p className="topbar-note">Personalized job-alert workflow for remote engineering roles</p>
+            <p className="topbar-note">Cleaner remote job discovery with guided onboarding</p>
           </div>
         </div>
         <div className="cta-row topbar-cta">
           <Link className="btn btn-link" href="/auth">
-            Sign In / Sign Up Free
+            Start Free
           </Link>
         </div>
       </header>
@@ -25,60 +32,67 @@ export default function HomePage() {
       <section className="landing-hero-doc">
         <div className="landing-copy hero-surface">
           <div className="hero-gridline" aria-hidden="true" />
-          <p className="eyebrow">What It Does</p>
-          <h1 className="landing-title">AI Job Agent finds relevant jobs and helps you manage alerts in one place.</h1>
+          <p className="eyebrow">Modern Job Workflow</p>
+          <h1 className="landing-title">One flow from Gmail verification to relevant job alerts.</h1>
           <p className="landing-subtitle">
-            It fetches jobs from multiple sources, filters noisy results using rules and AI, and lets you control your
-            preferences from a simple dashboard.
+            No confusing technical fields. Use guided role/tech selectors, resume intelligence, and a clean dashboard to keep
+            your search focused.
           </p>
           <div className="hero-bullets">
-            <div className="hero-chip">Multi-source jobs</div>
-            <div className="hero-chip">AI filtering</div>
-            <div className="hero-chip">User preferences</div>
-            <div className="hero-chip">Admin console</div>
+            <div className="hero-chip">OTP login</div>
+            <div className="hero-chip">Resume upload</div>
+            <div className="hero-chip">Smart picklists</div>
+            <div className="hero-chip">Simple dashboard</div>
+          </div>
+          <div className="cta-row">
+            <Link className="btn btn-link" href="/auth">
+              Create Account
+            </Link>
+            <Link className="btn btn-secondary btn-link" href="/dashboard">
+              Open Dashboard
+            </Link>
           </div>
         </div>
 
         <aside className="landing-panel">
-          <h2 className="section-title no-top">How It Works</h2>
-          <div className="classic-flow">
-            <div className="classic-step"><span>1</span>Create account / sign in</div>
-            <div className="classic-arrow" aria-hidden="true">→</div>
-            <div className="classic-step"><span>2</span>Set job preferences</div>
-            <div className="classic-arrow" aria-hidden="true">→</div>
-            <div className="classic-step"><span>3</span>AI filters job results</div>
-            <div className="classic-arrow" aria-hidden="true">→</div>
-            <div className="classic-step"><span>4</span>Get cleaner alerts</div>
+          <h2 className="section-title no-top">Dynamic Setup Flow</h2>
+          <div className="dynamic-flow-grid" role="list" aria-label="Setup flow">
+            {flowSteps.map((step, idx) => (
+              <div key={step.title} className="dynamic-flow-step" role="listitem">
+                <span>{idx + 1}</span>
+                <div>
+                  <strong>{step.title}</strong>
+                  <p>{step.detail}</p>
+                </div>
+              </div>
+            ))}
           </div>
-          <p className="muted-small">After login, users can update preferences anytime from the dashboard.</p>
+          <p className="muted-small">Every step is editable later. Onboarding progress is auto-saved.</p>
         </aside>
       </section>
 
       <section className="landing-showcase simple-two-col">
         <div className="feature-card example-card">
-          <h3>Example Result</h3>
-          <pre className="example-block">{`- Senior Backend Engineer — ExampleCo — https://jobs.example.com/123
-- Staff Software Engineer (Remote) — Acme — https://acme.io/jobs/456
-- Full Stack Engineer — ProductX — https://productx.com/careers/789`}</pre>
-          <p className="muted-small">
-            Example of the final AI-filtered list a user may receive.
-          </p>
+          <h3>What Users See</h3>
+          <ul className="simple-list">
+            <li>Step-based onboarding with progress flow</li>
+            <li>Resume upload + recommendation apply</li>
+            <li>Role and stack picklists with validation</li>
+            <li>No raw LLM input/output confusion</li>
+          </ul>
         </div>
 
         <div className="feature-card">
-          <h3>After Login (Dashboard)</h3>
+          <h3>What Improves</h3>
           <ul className="simple-list">
-            <li>View your username and Gmail</li>
-            <li>Update keyword and filters</li>
-            <li>Control result limits</li>
-            <li>Admin users can open the admin console</li>
+            <li>Lower onboarding drop-off</li>
+            <li>More consistent preference data</li>
+            <li>Clearer dashboard actions</li>
+            <li>Safer account access with OTP</li>
           </ul>
           <div className="cta-row">
             <Link className="btn btn-link" href="/auth">
-              Sign In / Sign Up Free
-            </Link>
-            <Link className="btn btn-secondary btn-link" href="/dashboard">
-              Go to Dashboard
+              Start with OTP
             </Link>
           </div>
         </div>

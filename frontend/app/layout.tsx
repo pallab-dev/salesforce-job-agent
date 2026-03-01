@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Salesforce Job Agent - Login",
-  description: "Minimal Next.js login UI prototype for job agent users"
+  title: "AI Job Agent",
+  description: "AI-powered job workflow with onboarding, resume intelligence, and smart alerts"
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

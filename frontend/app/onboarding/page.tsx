@@ -44,11 +44,11 @@ export default async function OnboardingPage() {
     <main className="page-shell onboarding-page">
       <section className="card onboarding-warning-card" aria-labelledby="onboarding-warning">
         <h2 id="onboarding-warning" className="section-title no-top">
-          Complete setup to receive useful alerts
+          Complete setup for better job matching
         </h2>
         <p className="subtitle compact">
-          If onboarding is skipped or preferences are left empty, alerts may be less relevant (or effectively not
-          useful). You can still update everything later from the dashboard.
+          This guided flow captures role focus, stack preferences, and resume insights. You can still update everything
+          later from the dashboard.
         </p>
         {initialStep > 0 && !completed ? (
           <p className="footnote">

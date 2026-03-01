@@ -1,6 +1,6 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
-import { getUserByUsername, upsertUser } from "./lib/db";
+import { getUserByEmail, getUserByUsername, upsertUser } from "./lib/db";
 
 function envOrPlaceholder(name: string): string {
   return process.env[name]?.trim() || `missing-${name.toLowerCase()}`;
@@ -28,7 +28,8 @@ export const { handlers, auth } = NextAuth({
       }
 
       try {
-        const username = usernameFromEmail(email);
+        const existing = await getUserByEmail(email);
+        const username = existing?.username || usernameFromEmail(email);
         await upsertUser({
           username,
           emailTo: email,
@@ -57,6 +58,6 @@ export const { handlers, auth } = NextAuth({
     }
   },
   pages: {
-    signIn: "/"
+    signIn: "/auth"
   }
 });

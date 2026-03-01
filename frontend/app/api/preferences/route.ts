@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getUserByUsername, getUserPreferences, upsertUserPreferences } from "../../../lib/db";
+import {
+  NEGATIVE_KEYWORD_OPTIONS,
+  TARGET_JOB_TITLE_OPTIONS,
+  TARGET_ROLE_OPTIONS,
+  TECH_STACK_OPTIONS
+} from "../../../lib/preference-options";
 
 export const runtime = "nodejs";
 
@@ -72,6 +78,27 @@ function parseStringArray(value: unknown, field: string): string[] {
       .filter(Boolean);
   }
   throw new Error(`${field} must be a string or array of strings`);
+}
+
+function parseAllowlistedArray(value: unknown, field: string, allowlist: readonly string[]): string[] {
+  const parsed = parseStringArray(value, field).map((item) => item.toLowerCase());
+  const allowed = new Set(allowlist.map((item) => item.toLowerCase()));
+  const invalid = parsed.filter((item) => !allowed.has(item));
+  if (invalid.length > 0) {
+    throw new Error(`${field} contains invalid values: ${invalid.join(", ")}`);
+  }
+  return parsed;
+}
+
+function parseKeywordFocus(value: unknown): string | null {
+  const parsed = parseOptionalString(value)?.toLowerCase() || null;
+  if (!parsed) {
+    return null;
+  }
+  if (!TARGET_JOB_TITLE_OPTIONS.map((item) => item.toLowerCase()).includes(parsed)) {
+    throw new Error("keyword must be a valid job title focus option");
+  }
+  return parsed;
 }
 
 function extractProfileOverrides(prefs: Awaited<ReturnType<typeof getUserPreferences>>): Record<string, unknown> {
@@ -191,7 +218,7 @@ export async function POST(request: Request) {
 
     const saved = await upsertUserPreferences({
       userId: user.id,
-      keyword: parseOptionalString(body.keyword),
+      keyword: parseKeywordFocus(body.keyword),
       llmInputLimit: parseOptionalInt(body.llm_input_limit, "llm_input_limit", {
         min: LLM_INPUT_LIMIT_MIN,
         max: LLM_INPUT_LIMIT_MAX
@@ -204,7 +231,24 @@ export async function POST(request: Request) {
       strictSeniorOnly: parseBoolean(body.strict_senior_only, "strict_senior_only"),
       profileOverrides: {
         ...mergedRoot,
-        profile: nextProfile,
+        profile: {
+          ...nextProfile,
+          ...(hasOwn(body, "target_roles")
+            ? { target_roles: parseAllowlistedArray(body.target_roles, "target_roles", TARGET_ROLE_OPTIONS) }
+            : {}),
+          ...(hasOwn(body, "tech_stack_tags")
+            ? { tech_stack_tags: parseAllowlistedArray(body.tech_stack_tags, "tech_stack_tags", TECH_STACK_OPTIONS) }
+            : {}),
+          ...(hasOwn(body, "negative_keywords")
+            ? {
+                negative_keywords: parseAllowlistedArray(
+                  body.negative_keywords,
+                  "negative_keywords",
+                  NEGATIVE_KEYWORD_OPTIONS
+                )
+              }
+            : {})
+        },
         product: nextProduct
       }
     });

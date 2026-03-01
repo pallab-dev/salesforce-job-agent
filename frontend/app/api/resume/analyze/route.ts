@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { analyzeResumeWithIntelligence } from "../../../../lib/resume-intelligence";
 import { getUserByUsername, getUserPreferences, saveResumeAnalysisArtifacts } from "../../../../lib/db";
+import { extractResumeTextFromFile } from "../../../../lib/resume-upload";
 
 export const runtime = "nodejs";
 
@@ -58,15 +59,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    let body: AnalyzeResumePayload;
-    try {
-      body = (await request.json()) as AnalyzeResumePayload;
-    } catch {
-      return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
-    }
+    let resumeText = "";
+    let source = "onboarding";
 
-    const resumeText = asTrimmedString(body.resume_text);
-    const source = asTrimmedString(body.source) || "onboarding";
+    const contentType = request.headers.get("content-type") || "";
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await request.formData();
+      const resumeFile = formData.get("resume_file");
+      const sourceRaw = formData.get("source");
+      source = asTrimmedString(sourceRaw) || "onboarding";
+      if (resumeFile instanceof File) {
+        resumeText = (await extractResumeTextFromFile(resumeFile)).trim();
+      }
+    } else {
+      let body: AnalyzeResumePayload;
+      try {
+        body = (await request.json()) as AnalyzeResumePayload;
+      } catch {
+        return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
+      }
+      resumeText = asTrimmedString(body.resume_text);
+      source = asTrimmedString(body.source) || "onboarding";
+    }
 
     if (resumeText.length < 80) {
       return NextResponse.json({ ok: false, error: "Resume text is too short for analysis" }, { status: 400 });
@@ -132,4 +146,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
-

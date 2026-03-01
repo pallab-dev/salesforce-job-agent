@@ -176,6 +176,19 @@ export type ResumeAnalysisPersistenceResult = {
   profile_signal_id: number;
 };
 
+export type EmailOtpChallenge = {
+  challenge_id: string;
+  mode: "signin" | "signup";
+  username: string;
+  email_to: string;
+  otp_hash: string;
+  expires_at: string;
+  attempts_used: number;
+  max_attempts: number;
+  consumed_at: string | null;
+  created_at: string;
+};
+
 export async function upsertUser(input: LoginInput) {
   const pool = getPool();
   const username = input.username.trim();
@@ -701,6 +714,154 @@ export async function setUserActiveStatus(username: string, isActive: boolean): 
     `,
     [username.trim(), isActive]
   );
+}
+
+let emailOtpTableReadyPromise: Promise<void> | null = null;
+
+async function ensureEmailOtpTable(): Promise<void> {
+  if (emailOtpTableReadyPromise) {
+    return emailOtpTableReadyPromise;
+  }
+
+  const pool = getPool();
+  emailOtpTableReadyPromise = (async () => {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS email_otp_challenges (
+        id BIGSERIAL PRIMARY KEY,
+        challenge_id TEXT NOT NULL UNIQUE,
+        mode TEXT NOT NULL,
+        username TEXT NOT NULL,
+        email_to TEXT NOT NULL,
+        otp_hash TEXT NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        attempts_used INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 5,
+        consumed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_email_otp_challenges_email_created
+      ON email_otp_challenges (LOWER(email_to), created_at DESC);
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_email_otp_challenges_active
+      ON email_otp_challenges (challenge_id, expires_at)
+      WHERE consumed_at IS NULL;
+    `);
+  })().catch((error) => {
+    emailOtpTableReadyPromise = null;
+    throw error;
+  });
+
+  return emailOtpTableReadyPromise;
+}
+
+function mapEmailOtpRow(row: Record<string, unknown>): EmailOtpChallenge {
+  return {
+    challenge_id: String(row.challenge_id),
+    mode: String(row.mode) === "signup" ? "signup" : "signin",
+    username: String(row.username),
+    email_to: String(row.email_to),
+    otp_hash: String(row.otp_hash),
+    expires_at: String(row.expires_at),
+    attempts_used: Number(row.attempts_used ?? 0),
+    max_attempts: Number(row.max_attempts ?? 5),
+    consumed_at: row.consumed_at ? String(row.consumed_at) : null,
+    created_at: String(row.created_at)
+  };
+}
+
+export async function createEmailOtpChallenge(input: {
+  challengeId: string;
+  mode: "signin" | "signup";
+  username: string;
+  emailTo: string;
+  otpHash: string;
+  expiresAt: Date;
+  maxAttempts?: number;
+}): Promise<EmailOtpChallenge> {
+  await ensureEmailOtpTable();
+  const pool = getPool();
+  const result = await pool.query(
+    `
+      INSERT INTO email_otp_challenges (
+        challenge_id, mode, username, email_to, otp_hash, expires_at, attempts_used, max_attempts, created_at
+      )
+      VALUES ($1, $2, $3, LOWER($4), $5, $6, 0, $7, NOW())
+      RETURNING challenge_id, mode, username, email_to, otp_hash, expires_at, attempts_used, max_attempts, consumed_at, created_at
+    `,
+    [
+      input.challengeId,
+      input.mode,
+      input.username.trim(),
+      input.emailTo.trim(),
+      input.otpHash,
+      input.expiresAt.toISOString(),
+      Number.isInteger(input.maxAttempts) && (input.maxAttempts as number) > 0 ? input.maxAttempts : 5
+    ]
+  );
+  return mapEmailOtpRow(result.rows[0] as Record<string, unknown>);
+}
+
+export async function getEmailOtpChallenge(challengeId: string): Promise<EmailOtpChallenge | null> {
+  await ensureEmailOtpTable();
+  const pool = getPool();
+  const result = await pool.query(
+    `
+      SELECT challenge_id, mode, username, email_to, otp_hash, expires_at, attempts_used, max_attempts, consumed_at, created_at
+      FROM email_otp_challenges
+      WHERE challenge_id = $1
+      LIMIT 1
+    `,
+    [challengeId.trim()]
+  );
+  if (result.rows.length === 0) {
+    return null;
+  }
+  return mapEmailOtpRow(result.rows[0] as Record<string, unknown>);
+}
+
+export async function incrementEmailOtpAttempts(challengeId: string): Promise<void> {
+  await ensureEmailOtpTable();
+  const pool = getPool();
+  await pool.query(
+    `
+      UPDATE email_otp_challenges
+      SET attempts_used = attempts_used + 1
+      WHERE challenge_id = $1
+    `,
+    [challengeId.trim()]
+  );
+}
+
+export async function consumeEmailOtpChallenge(challengeId: string): Promise<void> {
+  await ensureEmailOtpTable();
+  const pool = getPool();
+  await pool.query(
+    `
+      UPDATE email_otp_challenges
+      SET consumed_at = NOW()
+      WHERE challenge_id = $1
+    `,
+    [challengeId.trim()]
+  );
+}
+
+export async function countRecentEmailOtpRequests(emailTo: string, windowMinutes = 10): Promise<number> {
+  await ensureEmailOtpTable();
+  const pool = getPool();
+  const safeWindow = Math.max(1, Math.min(windowMinutes, 60));
+  const result = await pool.query(
+    `
+      SELECT COUNT(*)::int AS c
+      FROM email_otp_challenges
+      WHERE LOWER(email_to) = LOWER($1)
+        AND created_at >= NOW() - ($2::text || ' minutes')::interval
+    `,
+    [emailTo.trim(), String(safeWindow)]
+  );
+  return Number(result.rows[0]?.c ?? 0);
 }
 
 let resumeIntelligenceTablesReadyPromise: Promise<void> | null = null;

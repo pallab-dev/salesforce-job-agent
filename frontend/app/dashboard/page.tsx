@@ -18,18 +18,28 @@ export default async function DashboardPage({
   const canAccessAdmin = isAdminUser(currentUser);
   const prefs = currentUser ? await getUserPreferences(currentUser.id) : null;
   const marketSnapshot = currentUser ? await getDashboardMarketOpportunitySnapshot(currentUser.id) : null;
+  const profileSnapshot =
+    prefs?.profile_overrides && typeof prefs.profile_overrides["profile"] === "object"
+      ? (prefs.profile_overrides["profile"] as Record<string, unknown>)
+      : {};
+  const productSnapshot =
+    prefs?.profile_overrides && typeof prefs.profile_overrides["product"] === "object"
+      ? (prefs.profile_overrides["product"] as Record<string, unknown>)
+      : {};
   const setupComplete = Boolean(
     prefs &&
       (prefs.keyword?.trim() || "") &&
-      prefs.llm_input_limit &&
-      prefs.max_bullets
+      Array.isArray(profileSnapshot["target_roles"]) &&
+      (profileSnapshot["target_roles"] as unknown[]).length > 0 &&
+      Array.isArray(profileSnapshot["tech_stack_tags"]) &&
+      (profileSnapshot["tech_stack_tags"] as unknown[]).length > 0 &&
+      typeof productSnapshot["alert_frequency"] === "string" &&
+      (productSnapshot["alert_frequency"] as string).trim()
   );
   const checklist = [
     { label: "Username", done: Boolean(username) },
     { label: "Gmail", done: Boolean(email) },
-    { label: "Keyword", done: Boolean((prefs?.keyword || "").trim()) },
-    { label: "LLM input limit", done: Boolean(prefs?.llm_input_limit) },
-    { label: "Max bullets", done: Boolean(prefs?.max_bullets) },
+    { label: "Job title focus", done: Boolean((prefs?.keyword || "").trim()) },
     { label: "Remote preference", done: prefs?.remote_only !== null && prefs?.remote_only !== undefined },
     {
       label: "Seniority preference",
@@ -130,11 +140,9 @@ export default async function DashboardPage({
   const experienceLevel = typeof profileMeta["experience_level"] === "string" ? profileMeta["experience_level"] : "";
   const alertFrequency = typeof productMeta["alert_frequency"] === "string" ? productMeta["alert_frequency"] : "";
   const primaryGoal = typeof productMeta["primary_goal"] === "string" ? productMeta["primary_goal"] : "";
-  const recommendedNextAction = missingItems.includes("Keyword")
-    ? { label: "Set your keyword", href: "/dashboard#preferences" }
-    : missingItems.includes("LLM input limit") || missingItems.includes("Max bullets")
-      ? { label: "Set result limits", href: "/dashboard#preferences" }
-      : missingItems.includes("Experience level") || missingItems.includes("Target roles")
+  const recommendedNextAction = missingItems.includes("Job title focus")
+    ? { label: "Set your job title focus", href: "/dashboard#preferences" }
+    : missingItems.includes("Experience level") || missingItems.includes("Target roles")
         ? {
             label: resumeStepNumber ? `Resume onboarding (Step ${resumeStepNumber})` : "Complete profile signals",
             href: "/onboarding"
@@ -176,7 +184,7 @@ export default async function DashboardPage({
     }
     if ((marketSnapshot.runs_30d.avg_keyword_jobs_count ?? 0) < 5 && targetRoles.length > 0) {
       marketRecommendations.push(
-        `Keyword-matched volume is low. Broaden your keyword using one target role + 1-2 tech tags (for example: ${[
+        `Matched volume is low. Broaden your job title focus using one target role + 1-2 tech tags (for example: ${[
           targetRoles[0],
           ...techTags.slice(0, 2)
         ]
@@ -292,7 +300,7 @@ export default async function DashboardPage({
             <div className="summary-card">
               <span className="summary-label">Target Roles</span>
               <strong className="summary-value">{targetRoles.join(", ") || "-"}</strong>
-              <p className="summary-help">Comma-separated roles collected during onboarding.</p>
+              <p className="summary-help">Guided picklist roles collected during onboarding.</p>
             </div>
             <div className="summary-card">
               <span className="summary-label">Tech Stack / Frequency</span>
@@ -340,7 +348,7 @@ export default async function DashboardPage({
                     <div className="summary-card">
                       <span className="summary-label">Run Funnel</span>
                       <strong className="summary-value">
-                        {marketSnapshot.runs_30d.avg_keyword_jobs_count.toFixed(1)} keyword avg ·{" "}
+                        {marketSnapshot.runs_30d.avg_keyword_jobs_count.toFixed(1)} matched avg ·{" "}
                         {marketSnapshot.runs_30d.avg_emailed_jobs_count.toFixed(1)} emailed avg
                       </strong>
                       <p className="summary-help">Average per run over the last 30 days.</p>
@@ -389,7 +397,7 @@ export default async function DashboardPage({
                       <span className="summary-label">Career Value Suggestions</span>
                       <ul className="simple-list compact-list">
                         {(marketRecommendations.length ? marketRecommendations : [
-                          "Keep expanding global ATS sources and refine keyword + tech tags as data accumulates."
+                          "Keep expanding global ATS sources and refine job title focus + tech tags as data accumulates."
                         ]).slice(0, 4).map((item) => (
                           <li key={item}>{item}</li>
                         ))}
@@ -456,18 +464,23 @@ export default async function DashboardPage({
             <PreferencesForm
               initialPreferences={{
                 keyword: prefs?.keyword ?? "",
-                llm_input_limit: prefs?.llm_input_limit ?? "",
-                max_bullets: prefs?.max_bullets ?? "",
+                llm_input_limit: prefs?.llm_input_limit ?? 20,
+                max_bullets: prefs?.max_bullets ?? 8,
                 remote_only: prefs?.remote_only ?? false,
                 strict_senior_only: prefs?.strict_senior_only ?? false,
-                negative_keywords: negativeKeywords
+                experience_level: experienceLevel,
+                target_roles: targetRoles,
+                tech_stack_tags: techTags,
+                negative_keywords: negativeKeywords,
+                alert_frequency: alertFrequency,
+                primary_goal: primaryGoal
               }}
             />
           </section>
         ) : null}
 
         <footer className="dashboard-footer-links">
-          <span className="footnote">OAuth is parked for later and can be re-enabled when ready.</span>
+          <span className="footnote">Gmail OTP verification is enabled. OAuth can be added later.</span>
           <div className="dashboard-link-row">
             {canAccessAdmin ? <Link href="/admin">Open admin console</Link> : null}
             <Link href="/">Back to home</Link>

@@ -14,12 +14,11 @@ It stores user and preference data in PostgreSQL (Supabase) through server-side 
 
 Current preference controls exposed in the dashboard include:
 
-- keyword
-- LLM input limit
-- max bullets
+- job title focus
 - remote-only toggle
-- strict senior-only toggle
-- `negative_keywords` (comma-separated, optional; used by backend deterministic filtering before LLM)
+- senior-priority toggle
+- guided picklists for `target_roles`, `tech_stack_tags`, and `negative_keywords`
+- alert frequency + primary goal
 
 ## Routes
 
@@ -27,12 +26,13 @@ Current preference controls exposed in the dashboard include:
   - landing page
   - sets a landing-visit cookie used by middleware
 - `/auth`
-  - prototype auth (`username + Gmail`)
+  - dual auth: Gmail OTP (`username + Gmail`) and Google OAuth
   - `Sign Up` -> onboarding
   - `Sign In` -> dashboard
   - inactive users are automatically reactivated on successful sign-in
 - `/onboarding`
-  - guided setup (Account -> Preferences -> Finish)
+  - guided setup (Profile -> Preferences -> Finish)
+  - supports resume upload (`.pdf` / `.txt`) and smart profile recommendations
   - onboarding progress is persisted and resumable
 - `/dashboard`
   - tabbed user workspace (`overview`, `preferences`)
@@ -62,6 +62,20 @@ Optional / recommended:
 
 - `ADMIN_EMAIL_ALLOWLIST`
 - `ADMIN_USERNAME_ALLOWLIST`
+- `OTP_SECRET`
+- `EMAIL_PROVIDER` (`resend` | `postmark` | `sendgrid` | `smtp`)
+- `RESEND_API_KEY`
+- `RESEND_FROM`
+- `POSTMARK_SERVER_TOKEN`
+- `POSTMARK_FROM`
+- `SENDGRID_API_KEY`
+- `SENDGRID_FROM`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_SECURE`
+- `SMTP_USER`
+- `SMTP_PASS`
+- `SMTP_FROM`
 
 Example:
 
@@ -89,8 +103,8 @@ Open `http://localhost:3000/`.
 
 ## Prototype Auth Note
 
-Current auth is a prototype flow (`username + Gmail`) and does not verify Gmail ownership.
-Google OAuth / managed auth can be added later.
+Current auth supports both Gmail OTP and Google OAuth.
+For production, prefer API providers (`Resend` / `Postmark` / `SendGrid`) over personal Gmail SMTP.
 
 ## Preferences API Notes
 

@@ -1,6 +1,13 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import MultiSelectChips from "../../components/MultiSelectChips";
+import {
+  NEGATIVE_KEYWORD_OPTIONS,
+  TARGET_JOB_TITLE_OPTIONS,
+  TARGET_ROLE_OPTIONS,
+  TECH_STACK_OPTIONS
+} from "../../lib/preference-options";
 
 type PreferencesPayload = {
   keyword: string;
@@ -8,7 +15,12 @@ type PreferencesPayload = {
   max_bullets: number | "";
   remote_only: boolean;
   strict_senior_only: boolean;
+  experience_level: string;
+  target_roles: string[];
+  tech_stack_tags: string[];
   negative_keywords: string[];
+  alert_frequency: string;
+  primary_goal: string;
 };
 
 type PreferencesResponse =
@@ -19,21 +31,26 @@ type PreferencesResponse =
     }
   | { ok: false; error: string };
 
+const DEFAULT_FORM: PreferencesPayload = {
+  keyword: "",
+  llm_input_limit: 20,
+  max_bullets: 8,
+  remote_only: false,
+  strict_senior_only: false,
+  experience_level: "",
+  target_roles: [],
+  tech_stack_tags: [],
+  negative_keywords: [],
+  alert_frequency: "",
+  primary_goal: ""
+};
+
 export default function PreferencesForm({ initialPreferences }: { initialPreferences?: PreferencesPayload }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [form, setForm] = useState<PreferencesPayload>(
-    initialPreferences ?? {
-      keyword: "",
-      llm_input_limit: "",
-      max_bullets: "",
-      remote_only: false,
-      strict_senior_only: false,
-      negative_keywords: []
-    }
-  );
+  const [form, setForm] = useState<PreferencesPayload>(initialPreferences ?? DEFAULT_FORM);
 
   useEffect(() => {
     if (initialPreferences) {
@@ -55,7 +72,12 @@ export default function PreferencesForm({ initialPreferences }: { initialPrefere
         if (!active) {
           return;
         }
-        setForm(data.preferences);
+        setForm({
+          ...DEFAULT_FORM,
+          ...data.preferences,
+          llm_input_limit: data.preferences.llm_input_limit || 20,
+          max_bullets: data.preferences.max_bullets || 8
+        });
       } catch (e) {
         if (!active) {
           return;
@@ -92,8 +114,13 @@ export default function PreferencesForm({ initialPreferences }: { initialPrefere
         throw new Error(data.ok ? "Failed to save preferences" : data.error);
       }
 
-      setForm(data.preferences);
-      setSuccess("Preferences saved to PostgreSQL.");
+      setForm({
+        ...DEFAULT_FORM,
+        ...data.preferences,
+        llm_input_limit: data.preferences.llm_input_limit || 20,
+        max_bullets: data.preferences.max_bullets || 8
+      });
+      setSuccess("Preferences saved.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save preferences");
     } finally {
@@ -113,87 +140,70 @@ export default function PreferencesForm({ initialPreferences }: { initialPrefere
       <section className="prefs-section-card">
         <div className="prefs-section-head">
           <h3>Search Focus</h3>
-          <p>Define the primary keyword used for filtering jobs before AI ranking.</p>
+          <p>Select the role title you want to prioritize in job matching.</p>
         </div>
         <label className="field">
-          Keyword
-          <input
+          Job title focus
+          <select
             className="input"
-            maxLength={120}
-            placeholder="developer"
             value={form.keyword}
             onChange={(e) => setForm((prev) => ({ ...prev, keyword: e.target.value }))}
-          />
+          >
+            <option value="">Select...</option>
+            {TARGET_JOB_TITLE_OPTIONS.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
         </label>
-      </section>
 
-      <section className="prefs-section-card">
-        <div className="prefs-section-head">
-          <h3>Limits</h3>
-          <p>Control how many jobs enter the AI filter and how many bullets appear in results.</p>
-        </div>
-        <div className="grid-two">
-          <label className="field">
-            LLM Input Limit
-            <input
-              className="input"
-              type="number"
-              min={1}
-              step={1}
-              placeholder="15"
-              value={form.llm_input_limit}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  llm_input_limit: e.target.value === "" ? "" : Number(e.target.value)
-                }))
-              }
-            />
-          </label>
-
-          <label className="field">
-            Max Bullets
-            <input
-              className="input"
-              type="number"
-              min={1}
-              step={1}
-              placeholder="8"
-              value={form.max_bullets}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  max_bullets: e.target.value === "" ? "" : Number(e.target.value)
-                }))
-              }
-            />
-          </label>
-        </div>
+        <label className="field">
+          Experience level
+          <select
+            className="input"
+            value={form.experience_level}
+            onChange={(e) => setForm((prev) => ({ ...prev, experience_level: e.target.value }))}
+          >
+            <option value="">Select...</option>
+            <option value="entry">Entry</option>
+            <option value="mid">Mid</option>
+            <option value="senior">Senior</option>
+            <option value="staff">Staff/Principal</option>
+          </select>
+        </label>
       </section>
 
       <section className="prefs-section-card">
         <div className="prefs-section-head">
           <h3>Filters</h3>
-          <p>Choose strictness for remote roles and seniority matching.</p>
+          <p>Use guided picklists for cleaner data and stronger matching quality.</p>
         </div>
-        <label className="field">
-          Negative keywords (optional)
-          <input
-            className="input"
-            maxLength={300}
-            placeholder="qa, recruiter, support, sales"
-            value={form.negative_keywords.join(", ")}
-            onChange={(e) =>
-              setForm((prev) => ({
-                ...prev,
-                negative_keywords: e.target.value
-                  .split(",")
-                  .map((item) => item.trim())
-                  .filter(Boolean)
-              }))
-            }
-          />
-        </label>
+
+        <MultiSelectChips
+          label="Target roles"
+          options={TARGET_ROLE_OPTIONS}
+          selected={form.target_roles}
+          onChange={(target_roles) => setForm((prev) => ({ ...prev, target_roles }))}
+          placeholder="Search target role"
+        />
+
+        <MultiSelectChips
+          label="Tech stack tags"
+          options={TECH_STACK_OPTIONS}
+          selected={form.tech_stack_tags}
+          onChange={(tech_stack_tags) => setForm((prev) => ({ ...prev, tech_stack_tags }))}
+          placeholder="Search tech stack"
+        />
+
+        <MultiSelectChips
+          label="Exclude keywords"
+          options={NEGATIVE_KEYWORD_OPTIONS}
+          selected={form.negative_keywords}
+          onChange={(negative_keywords) => setForm((prev) => ({ ...prev, negative_keywords }))}
+          placeholder="Search exclusion keyword"
+        />
+
         <div className="toggle-grid">
           <label className="toggle-card">
             <div>
@@ -209,8 +219,8 @@ export default function PreferencesForm({ initialPreferences }: { initialPrefere
 
           <label className="toggle-card">
             <div>
-              <strong>Strict senior only</strong>
-              <p>Reduce junior or broad matches and focus on senior roles.</p>
+              <strong>Senior priority</strong>
+              <p>Reduce junior role noise and prioritize senior matches.</p>
             </div>
             <input
               type="checkbox"
@@ -221,11 +231,47 @@ export default function PreferencesForm({ initialPreferences }: { initialPrefere
         </div>
       </section>
 
+      <section className="prefs-section-card">
+        <div className="prefs-section-head">
+          <h3>Alert Rhythm</h3>
+          <p>Control update cadence and the main purpose of alerts.</p>
+        </div>
+        <div className="grid-two">
+          <label className="field">
+            Alert frequency
+            <select
+              className="input"
+              value={form.alert_frequency}
+              onChange={(e) => setForm((prev) => ({ ...prev, alert_frequency: e.target.value }))}
+            >
+              <option value="">Select...</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="high_priority_only">High priority only</option>
+            </select>
+          </label>
+
+          <label className="field">
+            Primary goal
+            <select
+              className="input"
+              value={form.primary_goal}
+              onChange={(e) => setForm((prev) => ({ ...prev, primary_goal: e.target.value }))}
+            >
+              <option value="">Select...</option>
+              <option value="job_switch">Job switch</option>
+              <option value="market_tracking">Market tracking</option>
+              <option value="interview_pipeline">Interview pipeline</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
       <div className="prefs-actions">
         <button className="btn" type="submit" disabled={saving}>
           {saving ? "Saving..." : "Save Preferences"}
         </button>
-        <span className="footnote">Changes are saved to PostgreSQL immediately when you click save.</span>
+        <span className="footnote">LLM internals are hidden from this screen to keep setup simple.</span>
       </div>
     </form>
   );

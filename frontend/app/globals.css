@@ -1,12 +1,12 @@
 :root {
-  --bg: #efe7da;
-  --bg2: #d8eee3;
-  --card: #fffaf2;
-  --ink: #19150f;
-  --muted: #665d53;
-  --line: #d9ccb9;
-  --accent: #0f7a64;
-  --accent2: #0c5e4e;
+  --bg: #f1f6f8;
+  --bg2: #dff0eb;
+  --card: #ffffff;
+  --ink: #101a21;
+  --muted: #53616b;
+  --line: #d6e1e8;
+  --accent: #0d7b86;
+  --accent2: #0a4f61;
   --danger: #a2332b;
   --danger-bg: #fdeae8;
   --ok: #115848;
@@ -26,10 +26,10 @@ body {
   min-height: 100vh;
   color: var(--ink);
   background:
-    radial-gradient(circle at 12% 12%, #f2dfbf 0, transparent 42%),
-    radial-gradient(circle at 90% 0%, var(--bg2) 0, transparent 35%),
+    radial-gradient(circle at 10% 5%, #f7dfbe 0, transparent 40%),
+    radial-gradient(circle at 90% 0%, var(--bg2) 0, transparent 30%),
     var(--bg);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: "Avenir Next", "Manrope", "Segoe UI", sans-serif;
 }
 
 .page-shell {
@@ -43,11 +43,11 @@ body {
   min-height: 100vh;
   display: grid;
   grid-template-columns: 260px 1fr;
-  background: #f5f1ea;
+  background: linear-gradient(180deg, #ecf3f7, #f5f9fb);
 }
 
 .dashboard-sidebar-v2 {
-  background: linear-gradient(180deg, #122430, #0f1d27);
+  background: linear-gradient(180deg, #123044, #0f2130);
   color: #dbe7ef;
   padding: 18px 14px;
   display: grid;
@@ -167,9 +167,9 @@ body {
 }
 
 .dashboard-panel {
-  border: 1px solid #dfd3c1;
+  border: 1px solid #d6e1e8;
   border-radius: 14px;
-  background: rgba(255, 250, 242, 0.92);
+  background: rgba(255, 255, 255, 0.93);
   padding: 14px 16px;
   display: grid;
   gap: 12px;
@@ -411,7 +411,7 @@ body {
 .landing-copy,
 .landing-panel,
 .feature-card {
-  background: rgba(255, 250, 242, 0.9);
+  background: rgba(255, 255, 255, 0.93);
   border: 1px solid var(--line);
   border-radius: 16px;
   padding: 20px;
@@ -503,9 +503,9 @@ body {
 }
 
 .hero-chip {
-  border: 1px solid #cfe1d7;
-  background: linear-gradient(180deg, #f5fffb, #eef8f3);
-  color: #1b5a4b;
+  border: 1px solid #d1e7ec;
+  background: linear-gradient(180deg, #f3fcff, #edf7fb);
+  color: #125766;
   border-radius: 999px;
   padding: 6px 10px;
   font-size: 0.82rem;
@@ -541,8 +541,8 @@ body {
 }
 
 .classic-step span {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border-radius: 999px;
   background: #175a4b;
   color: #fff;
@@ -1667,4 +1667,132 @@ body {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 14px;
+}
+
+.modern-landing {
+  gap: 20px;
+}
+
+.dynamic-flow-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.dynamic-flow-step {
+  border: 1px solid #d8e6ee;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fbfeff, #f1f8fb);
+  padding: 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.dynamic-flow-step span {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #0d6f85;
+  color: #fff;
+  display: inline-grid;
+  place-items: center;
+  font-size: 0.76rem;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+.dynamic-flow-step p {
+  margin: 2px 0 0;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+.flow-diagram {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.flow-node {
+  border: 1px dashed #c7d9e4;
+  border-radius: 12px;
+  padding: 10px;
+  font-size: 0.86rem;
+  color: #48606d;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f8fcfe;
+}
+
+.flow-node span {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  font-weight: 700;
+  background: #dbe8ee;
+  color: #35505e;
+}
+
+.flow-node.active {
+  border-style: solid;
+  border-color: #8ac6d6;
+  background: #eef9fd;
+  color: #123f4d;
+}
+
+.flow-node.active span {
+  background: #0d6f85;
+  color: #fff;
+}
+
+.flow-node.done {
+  border-style: solid;
+  border-color: #9dd4c5;
+  background: #effaf6;
+  color: #1f5d50;
+}
+
+.flow-node.done span {
+  background: #18745f;
+  color: #fff;
+}
+
+.chip-picker {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.chip-option {
+  border: 1px solid #c8dde6;
+  border-radius: 999px;
+  background: #f4fbff;
+  color: #1d5668;
+  padding: 4px 10px;
+  font-size: 0.82rem;
+}
+
+.selected-chip {
+  border: 1px solid #a7d4dd;
+  border-radius: 999px;
+  background: #e9f9fd;
+  color: #14596f;
+  padding: 5px 10px;
+  font-size: 0.82rem;
+}
+
+.otp-section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed #cad9e2;
+}
+
+@media (max-width: 920px) {
+  .flow-diagram {
+    grid-template-columns: 1fr;
+  }
 }
