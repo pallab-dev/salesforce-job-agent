@@ -1984,3 +1984,19 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+.inline-link-btn {
+  border: 0;
+  background: transparent;
+  color: #0b5d73;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.inline-link-btn:hover {
+  color: #0d7b86;
+}

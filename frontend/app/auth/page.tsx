@@ -1,10 +1,14 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 type AuthMode = "signin" | "signup";
+
+type SessionStatusResponse =
+  | { ok: true; authenticated: boolean; user: { username: string; email_to: string } | null }
+  | { ok: false; error: string };
 
 type OtpRequestResponse =
   | {
@@ -27,7 +31,8 @@ type VerifyResponse =
 
 export default function AuthPage() {
   const router = useRouter();
-  const [mode, setMode] = useState<AuthMode>("signin");
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [mode, setMode] = useState<AuthMode>("signup");
   const [username, setUsername] = useState("");
   const [emailTo, setEmailTo] = useState("");
   const [timezone, setTimezone] = useState("");
@@ -37,6 +42,43 @@ export default function AuthPage() {
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+
+  useEffect(() => {
+    let active = true;
+
+    async function checkSession() {
+      try {
+        const response = await fetch("/api/account/session", { method: "GET" });
+        const data = (await response.json()) as SessionStatusResponse;
+        if (!active) {
+          return;
+        }
+        if (response.ok && data.ok && data.authenticated) {
+          router.replace("/dashboard");
+          return;
+        }
+      } catch {
+        // non-blocking: allow auth page rendering
+      } finally {
+        if (active) {
+          setCheckingSession(false);
+        }
+      }
+    }
+
+    void checkSession();
+    return () => {
+      active = false;
+    };
+  }, [router]);
+
+  function resetChallengeState(nextMode: AuthMode) {
+    setMode(nextMode);
+    setChallengeId("");
+    setOtpCode("");
+    setError("");
+    setInfo("");
+  }
 
   async function requestOtp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -115,44 +157,27 @@ export default function AuthPage() {
     }
   }
 
+  if (checkingSession) {
+    return (
+      <main className="page-shell">
+        <section className="card">
+          <p className="footnote">Checking session...</p>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="page-shell">
       <section className="card" aria-labelledby="login-title">
         <h1 id="login-title" className="title">
-          Secure Access
+          {mode === "signup" ? "Create Your Account" : "Welcome Back"}
         </h1>
-        <p className="subtitle">Sign in or sign up using Gmail OTP verification.</p>
-
-        <div className="mode-switch" role="tablist" aria-label="Auth mode">
-          <button
-            type="button"
-            className={`mode-btn ${mode === "signin" ? "active" : ""}`}
-            aria-selected={mode === "signin"}
-            onClick={() => {
-              setMode("signin");
-              setChallengeId("");
-              setOtpCode("");
-              setError("");
-              setInfo("");
-            }}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            className={`mode-btn ${mode === "signup" ? "active" : ""}`}
-            aria-selected={mode === "signup"}
-            onClick={() => {
-              setMode("signup");
-              setChallengeId("");
-              setOtpCode("");
-              setError("");
-              setInfo("");
-            }}
-          >
-            Sign Up
-          </button>
-        </div>
+        <p className="subtitle">
+          {mode === "signup"
+            ? "Sign up with Gmail OTP and start your onboarding flow."
+            : "Already signed up users can log in with Gmail OTP."}
+        </p>
 
         {info ? <div className="banner ok">{info}</div> : null}
         {error ? <div className="banner err">{error}</div> : null}
@@ -160,7 +185,7 @@ export default function AuthPage() {
         <div className="prefs-section-card">
           <div className="prefs-section-head">
             <h3>Google OAuth</h3>
-            <p>Fast sign-in for production users.</p>
+            <p>Fast sign-in for existing users.</p>
           </div>
           <a className="btn btn-link" href="/api/auth/signin/google?callbackUrl=/api/auth/sync-session">
             Continue with Google
@@ -208,7 +233,7 @@ export default function AuthPage() {
           </label>
 
           <button className="btn" type="submit" disabled={loading || Boolean(challengeId)}>
-            {loading ? "Sending OTP..." : "Send OTP"}
+            {loading ? "Sending OTP..." : mode === "signup" ? "Sign Up with OTP" : "Log In with OTP"}
           </button>
         </form>
 
@@ -228,7 +253,7 @@ export default function AuthPage() {
             </label>
             <div className="cta-row">
               <button className="btn" type="submit" disabled={verifying || otpCode.length !== 6}>
-                {verifying ? "Verifying..." : mode === "signup" ? "Verify & Create Account" : "Verify & Sign In"}
+                {verifying ? "Verifying..." : mode === "signup" ? "Verify & Create Account" : "Verify & Log In"}
               </button>
               <button
                 className="btn btn-secondary"
@@ -246,7 +271,24 @@ export default function AuthPage() {
           </form>
         ) : null}
 
-        <p className="footnote">OTP and Google OAuth are both enabled. Use whichever is best for your users.</p>
+        <p className="footnote">
+          {mode === "signup" ? (
+            <>
+              Already signed up?{" "}
+              <button className="inline-link-btn" type="button" onClick={() => resetChallengeState("signin")}>
+                Click to login
+              </button>
+            </>
+          ) : (
+            <>
+              New here?{" "}
+              <button className="inline-link-btn" type="button" onClick={() => resetChallengeState("signup")}>
+                Create an account
+              </button>
+            </>
+          )}
+        </p>
+
         <p className="footnote">
           <Link href="/">Back to homepage</Link>
         </p>

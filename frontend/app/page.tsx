@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getCurrentUserFromCookies } from "../lib/session";
 
 const flowSteps = [
   { title: "Verify", detail: "Sign in with Gmail OTP verification" },
@@ -7,7 +8,11 @@ const flowSteps = [
   { title: "Track", detail: "Get cleaner alerts and iterate from dashboard" }
 ] as const;
 
-export default function HomePage() {
+export default async function HomePage() {
+  const currentUser = await getCurrentUserFromCookies();
+  const startHref = currentUser ? "/dashboard" : "/auth";
+  const startLabel = currentUser ? "Go to Dashboard" : "Start Free";
+
   return (
     <main className="landing-shell modern-landing">
       <header className="landing-topbar">
@@ -23,8 +28,8 @@ export default function HomePage() {
           </div>
         </div>
         <div className="cta-row topbar-cta">
-          <Link className="btn btn-link" href="/auth">
-            Start Free
+          <Link className="btn btn-link" href={startHref}>
+            {startLabel}
           </Link>
         </div>
       </header>
@@ -47,8 +52,8 @@ export default function HomePage() {
             <div className="hero-chip">Simple dashboard</div>
           </div>
           <div className="cta-row">
-            <Link className="btn btn-link" href="/auth">
-              Create Account
+            <Link className="btn btn-link" href={startHref}>
+              {currentUser ? "Open Dashboard" : "Create Account"}
             </Link>
             <Link className="btn btn-secondary btn-link" href="/dashboard">
               Open Dashboard
@@ -107,8 +112,8 @@ export default function HomePage() {
             <li>Safer account access with OTP</li>
           </ul>
           <div className="cta-row">
-            <Link className="btn btn-link" href="/auth">
-              Start with OTP
+            <Link className="btn btn-link" href={startHref}>
+              {currentUser ? "Continue" : "Start with OTP"}
             </Link>
           </div>
         </div>
