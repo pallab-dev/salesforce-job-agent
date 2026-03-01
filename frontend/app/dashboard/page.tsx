@@ -271,6 +271,24 @@ export default async function DashboardPage({
             <div className="banner err">No login session found yet. Submit the login form first.</div>
           )}
 
+          <div className="dashboard-spotlight">
+            <div className="spotlight-panel">
+              <span className="summary-label">Current Setup Score</span>
+              <strong>{completionPercent}%</strong>
+              <p>{improvementEstimate.detail}</p>
+            </div>
+            <div className="spotlight-panel">
+              <span className="summary-label">Recommended Next Move</span>
+              <strong>{recommendedNextAction.label}</strong>
+              <p>{missingItems.length > 0 ? "Follow the next step to improve match quality." : "You are fully configured."}</p>
+            </div>
+            <div className="spotlight-panel">
+              <span className="summary-label">Session Mode</span>
+              <strong>{setupComplete ? "Ready for Alerts" : "Setup in Progress"}</strong>
+              <p>{email || "No active identity session detected."}</p>
+            </div>
+          </div>
+
           <div className="dashboard-summary-grid">
             <div className="summary-card">
               <span className="summary-label">Username</span>

@@ -32,6 +32,8 @@ export default function HomePage() {
       <section className="landing-hero-doc">
         <div className="landing-copy hero-surface">
           <div className="hero-gridline" aria-hidden="true" />
+          <div className="hero-orb hero-orb-a" aria-hidden="true" />
+          <div className="hero-orb hero-orb-b" aria-hidden="true" />
           <p className="eyebrow">Modern Job Workflow</p>
           <h1 className="landing-title">One flow from Gmail verification to relevant job alerts.</h1>
           <p className="landing-subtitle">
@@ -51,6 +53,20 @@ export default function HomePage() {
             <Link className="btn btn-secondary btn-link" href="/dashboard">
               Open Dashboard
             </Link>
+          </div>
+          <div className="hero-kpi-row" aria-label="Product highlights">
+            <article className="hero-kpi-card">
+              <span>Onboarding</span>
+              <strong>3-step</strong>
+            </article>
+            <article className="hero-kpi-card">
+              <span>Authentication</span>
+              <strong>OTP + OAuth</strong>
+            </article>
+            <article className="hero-kpi-card">
+              <span>Profile Input</span>
+              <strong>Upload + Picklists</strong>
+            </article>
           </div>
         </div>
 

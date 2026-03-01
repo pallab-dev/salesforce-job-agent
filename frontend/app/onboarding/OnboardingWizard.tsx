@@ -309,6 +309,13 @@ export default function OnboardingWizard({
         <div className="progress-track" aria-hidden="true">
           <div className="progress-fill" style={{ width: `${progressPercent}%` }} />
         </div>
+        <p className="flow-hint">
+          {stepIndex === 0
+            ? "Start by setting your role baseline."
+            : stepIndex === 1
+              ? "Refine your targeting preferences."
+              : "Review final setup and finish."}
+        </p>
       </div>
 
       <div className="onboarding-score-card">
